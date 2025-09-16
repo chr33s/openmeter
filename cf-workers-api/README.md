@@ -94,6 +94,8 @@ npm run typecheck
 
 ### Deployment
 
+**Note:** This implementation contains ~3,400 lines of TypeScript code with comprehensive functionality. Before production deployment, resolve TypeScript type issues around Hono context variables and optional parameter handling.
+
 ```bash
 # Deploy to Cloudflare Workers
 npm run deploy

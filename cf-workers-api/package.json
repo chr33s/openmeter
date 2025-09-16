@@ -32,7 +32,7 @@
     "@types/node": "^22.10.8",
     "@typescript-eslint/eslint-plugin": "^8.18.3",
     "@typescript-eslint/parser": "^8.18.3",
-    "drizzle-kit": "^0.27.4",
+    "drizzle-kit": "^0.26.2",
     "eslint": "^9.18.0",
     "miniflare": "^3.20241223.0",
     "prettier": "^3.4.2",
@@ -41,9 +41,9 @@
     "wrangler": "^3.103.0"
   },
   "dependencies": {
-    "drizzle-orm": "^0.37.0",
+    "drizzle-orm": "^0.36.4",
     "hono": "^4.6.13",
     "zod": "^3.24.1",
-    "@hono/zod-validator": "^0.3.1"
+    "@hono/zod-validator": "^0.4.1"
   }
 }
