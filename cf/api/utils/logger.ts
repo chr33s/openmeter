@@ -168,11 +168,10 @@ export function createLogger(context?: Partial<LogContext>): Logger {
 }
 
 // Request logging middleware helper
-export function withRequestLogging(request: Request): Logger {
-  const headers = Object.fromEntries(request.headers.entries());
-  return createLogger().requestStart(
-    request.method,
-    request.url,
-    headers
-  );
+export function withRequestLogging(request: any): Logger {
+  const method = request.method || 'GET';
+  const url = request.url || '';
+  const headers = request.headers ? Object.fromEntries(request.headers.entries()) : {};
+  
+  return createLogger().requestStart(method, url, headers);
 }

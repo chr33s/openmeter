@@ -111,8 +111,8 @@ export interface UsageAggregate {
 
 // API Request/Response types
 export interface PaginationParams {
-  limit?: number;
-  offset?: number;
+  limit: number;
+  offset: number;
   page?: number;
   after?: string;
 }
@@ -123,8 +123,8 @@ export interface PaginationResponse<T> {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
   page?: number;
-  limit?: number;
-  offset?: number;
+  limit: number;
+  offset: number;
 }
 
 // Meter API types
@@ -171,6 +171,40 @@ export const BatchIngestEventSchema = z.object({
 
 export type IngestEventRequest = z.infer<typeof IngestEventSchema>;
 export type BatchIngestEventRequest = z.infer<typeof BatchIngestEventSchema>;
+
+// Authentication types
+export interface AuthContext {
+  isAuthenticated: boolean;
+  authenticated?: boolean; // Legacy field for backward compatibility
+  role: 'admin' | 'read';
+  namespace: string;
+  source: 'api-key' | 'jwt';
+  apiKeyValid?: boolean;
+  jwtValid?: boolean;
+  userId?: string;
+}
+
+// Rate limiting types
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetTime: number;
+}
+
+// Logging types
+export interface LogContext {
+  requestId?: string;
+  userId?: string;
+  namespace?: string;
+  [key: string]: any;
+}
+
+// Cache types
+export interface CacheEntry {
+  value: string;
+  expiresAt?: number;
+  tags?: string[];
+}
 
 // Feature API types
 export const CreateFeatureSchema = z.object({

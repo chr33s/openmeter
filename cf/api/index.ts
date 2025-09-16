@@ -24,8 +24,18 @@ import subjectsRouter from '@/routes/subjects';
 import featuresRouter from '@/routes/features';
 import usageRouter from '@/routes/usage';
 
-// Create Hono app
-const app = new Hono<{ Bindings: Env }>();
+// Create Hono app with proper typing
+const app = new Hono<{ 
+  Bindings: Env;
+  Variables: {
+    dbService: any;
+    cacheService: any;
+    eventsService: any;
+    requestId: string;
+    namespace: string;
+    jwtPayload?: any;
+  };
+}>();
 
 // Global middleware
 app.use('*', validateRequestId());
@@ -129,7 +139,6 @@ app.get('/health', async (c) => {
   try {
     const dbService = createDatabaseService(c.env);
     const cacheService = createCacheService(c.env);
-    const aiService = createAIService(c.env);
     
     // Run health checks in parallel
     const [dbHealth, cacheHealth] = await Promise.allSettled([
@@ -138,7 +147,7 @@ app.get('/health', async (c) => {
     ]);
     
     const health = {
-      status: 'ok' as const,
+      status: 'ok' as 'ok' | 'degraded' | 'down',
       timestamp: new Date().toISOString(),
       checks: {
         database: dbHealth.status === 'fulfilled' && dbHealth.value ? 'ok' : 'error',

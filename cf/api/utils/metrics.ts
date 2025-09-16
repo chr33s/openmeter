@@ -256,13 +256,13 @@ export class ApplicationMetrics {
   // Helper methods
   private extractKeyType(key: string): string {
     const parts = key.split(':');
-    return parts.length > 0 ? parts[0] : 'unknown';
+    return parts.length > 0 ? (parts[0] || 'unknown') : 'unknown';
   }
 
   private normalizeModelName(model: string): string {
     // Extract model name from CF AI model identifier
     const parts = model.split('/');
-    return parts.length > 0 ? parts[parts.length - 1] : model;
+    return parts.length > 0 ? (parts[parts.length - 1] || model) : model;
   }
 
   private formatLabels(labels?: Record<string, string>): string {
