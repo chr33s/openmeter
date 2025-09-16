@@ -6,14 +6,26 @@ import type { Env, AuthContext } from '@/types';
 import { createLogger } from '@/utils/logger';
 
 // Create authentication middleware
-export const auth = () => createMiddleware<{ Bindings: Env; Variables: { auth: AuthContext } }>(
+export const auth = () => createMiddleware<{ 
+  Bindings: Env; 
+  Variables: { 
+    auth: AuthContext;
+    requestId: string;
+    jwtPayload?: any;
+  } 
+}>(
   async (c, next) => {
-    const logger = createLogger({ requestId: c.get('requestId') });
+    const requestId = c.get('requestId') as string || 'unknown';
+    const logger = createLogger({ requestId });
     const authHeader = c.req.header('Authorization');
     const apiKeyHeader = c.req.header('x-api-key');
     
     const authContext: AuthContext = {
+      isAuthenticated: false,
       authenticated: false,
+      role: 'read',
+      namespace: extractNamespace(c.req),
+      source: 'api-key',
       apiKeyValid: false,
       jwtValid: false
     };
@@ -22,9 +34,11 @@ export const auth = () => createMiddleware<{ Bindings: Env; Variables: { auth: A
     if (apiKeyHeader) {
       const isValid = await validateApiKey(apiKeyHeader, c.env);
       if (isValid) {
+        authContext.isAuthenticated = true;
         authContext.authenticated = true;
         authContext.apiKeyValid = true;
         authContext.role = 'admin'; // API keys get admin access
+        authContext.source = 'api-key';
         logger.authEvent('success', 'api-key');
       } else {
         logger.authEvent('failure', 'api-key');
@@ -32,15 +46,18 @@ export const auth = () => createMiddleware<{ Bindings: Env; Variables: { auth: A
     }
 
     // Try JWT authentication if API key failed
-    if (!authContext.authenticated && authHeader?.startsWith('Bearer ')) {
+    if (!authContext.isAuthenticated && authHeader?.startsWith('Bearer ')) {
       const token = authHeader.substring(7);
       const jwtPayload = await validateJWT(token, c.env);
       
       if (jwtPayload) {
+        authContext.isAuthenticated = true;
         authContext.authenticated = true;
         authContext.jwtValid = true;
         authContext.userId = jwtPayload.sub;
         authContext.role = jwtPayload.role || 'read';
+        authContext.source = 'jwt';
+        c.set('jwtPayload', jwtPayload);
         logger.authEvent('success', 'jwt', { userId: jwtPayload.sub });
       } else {
         logger.authEvent('failure', 'jwt');
@@ -55,18 +72,24 @@ export const auth = () => createMiddleware<{ Bindings: Env; Variables: { auth: A
 );
 
 // Require authentication middleware
-export const requireAuth = () => createMiddleware<{ Bindings: Env; Variables: { auth: AuthContext } }>(
+export const requireAuth = () => createMiddleware<{ 
+  Bindings: Env; 
+  Variables: { 
+    auth: AuthContext;
+    requestId: string;
+  } 
+}>(
   async (c, next) => {
     const auth = c.get('auth');
     
-    if (!auth?.authenticated) {
+    if (!auth?.isAuthenticated) {
       return c.json({
         error: {
           code: 'UNAUTHORIZED',
           message: 'Authentication required'
         },
         timestamp: new Date().toISOString(),
-        requestId: c.get('requestId')
+        requestId: c.get('requestId') as string
       }, 401);
     }
 
@@ -75,18 +98,24 @@ export const requireAuth = () => createMiddleware<{ Bindings: Env; Variables: { 
 );
 
 // Require admin role middleware
-export const requireAdmin = () => createMiddleware<{ Bindings: Env; Variables: { auth: AuthContext } }>(
+export const requireAdmin = () => createMiddleware<{ 
+  Bindings: Env; 
+  Variables: { 
+    auth: AuthContext;
+    requestId: string;
+  } 
+}>(
   async (c, next) => {
     const auth = c.get('auth');
     
-    if (!auth?.authenticated) {
+    if (!auth?.isAuthenticated) {
       return c.json({
         error: {
           code: 'UNAUTHORIZED',
           message: 'Authentication required'
         },
         timestamp: new Date().toISOString(),
-        requestId: c.get('requestId')
+        requestId: c.get('requestId') as string
       }, 401);
     }
 
@@ -97,7 +126,7 @@ export const requireAdmin = () => createMiddleware<{ Bindings: Env; Variables: {
           message: 'Admin role required'
         },
         timestamp: new Date().toISOString(),
-        requestId: c.get('requestId')
+        requestId: c.get('requestId') as string
       }, 403);
     }
 
@@ -109,7 +138,7 @@ export const requireAdmin = () => createMiddleware<{ Bindings: Env; Variables: {
 async function validateApiKey(apiKey: string, env: Env): Promise<boolean> {
   try {
     // Check if API key has correct prefix
-    if (!apiKey.startsWith(env.API_KEY_PREFIX)) {
+    if (!env.API_KEY_PREFIX || !apiKey.startsWith(env.API_KEY_PREFIX)) {
       return false;
     }
 
@@ -134,7 +163,10 @@ async function validateJWT(token: string, env: Env): Promise<any | null> {
     const payload = await verify(token, env.JWT_SECRET);
     
     // Validate issuer and audience
-    if (payload.iss !== env.JWT_ISSUER || payload.aud !== env.JWT_AUDIENCE) {
+    if (env.JWT_ISSUER && payload.iss !== env.JWT_ISSUER) {
+      return null;
+    }
+    if (env.JWT_AUDIENCE && payload.aud !== env.JWT_AUDIENCE) {
       return null;
     }
 
@@ -161,15 +193,11 @@ async function generateApiKey(secret: string): Promise<string> {
   return `om_${hashHex.substring(0, 32)}`;
 }
 
-// Optional: Middleware to extract namespace from request
-export const extractNamespace = () => createMiddleware<{ Bindings: Env; Variables: { namespace: string } }>(
-  async (c, next) => {
-    // Extract namespace from header, query param, or use default
-    const namespace = c.req.header('x-namespace') || 
-                      c.req.query('namespace') || 
-                      'default';
-    
-    c.set('namespace', namespace);
-    await next();
-  }
-);
+// Extract namespace from request (for multitenancy)
+export function extractNamespace(req: any): string {
+  // Try to extract from headers or subdomain
+  const namespace = req.header?.('x-namespace') || 
+                   req.header?.('x-tenant') ||
+                   'default';
+  return namespace;
+}

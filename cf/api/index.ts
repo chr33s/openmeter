@@ -101,9 +101,8 @@ app.use('/api/*', createMiddleware(async (c, next) => {
   await next();
 }));
 
-// Authentication and namespace extraction
+// Authentication
 app.use('/api/*', auth());
-app.use('/api/*', extractNamespace());
 
 // Content type validation for write operations
 app.use('/api/*/events', validateContentType());

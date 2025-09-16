@@ -189,6 +189,7 @@ export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   resetTime: number;
+  retryAfter?: number;
 }
 
 // Logging types
@@ -200,8 +201,8 @@ export interface LogContext {
 }
 
 // Cache types
-export interface CacheEntry {
-  value: string;
+export interface CacheEntry<T = any> {
+  value: T;
   expiresAt?: number;
   tags?: string[];
 }

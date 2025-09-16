@@ -67,7 +67,7 @@ export const rateLimit = (options?: {
             }
           },
           timestamp: new Date().toISOString(),
-          requestId: c.get('requestId')
+          requestId: c.get('requestId') as string
         }, 429);
       }
 
