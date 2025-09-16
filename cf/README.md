@@ -189,8 +189,8 @@ Tests use Miniflare for local Workers environment simulation.
 ## Project Structure
 
 ```
-cf-workers-api/
-├── src/
+cf/
+├── api/                      # Source code
 │   ├── index.ts              # Main application entry
 │   ├── routes/               # API route handlers
 │   │   ├── meters.ts
