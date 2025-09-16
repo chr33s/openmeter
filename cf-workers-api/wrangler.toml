@@ -1,0 +1,42 @@
+name = "openmeter-cf-workers-api"
+main = "dist/index.js"
+compatibility_date = "2024-01-15"
+compatibility_flags = ["nodejs_compat"]
+
+[env.production]
+vars = { ENVIRONMENT = "production" }
+
+[env.staging]
+vars = { ENVIRONMENT = "staging" }
+
+[env.development]
+vars = { ENVIRONMENT = "development" }
+
+[[d1_databases]]
+binding = "D1_DB"
+database_name = "openmeter-db"
+database_id = ""
+
+[[kv_namespaces]]
+binding = "KV_CACHE"
+id = ""
+preview_id = ""
+
+[ai]
+binding = "AI"
+
+[vars]
+ENVIRONMENT = "development"
+CORS_ORIGINS = "*"
+API_KEY_PREFIX = "om_"
+JWT_ISSUER = "openmeter"
+JWT_AUDIENCE = "openmeter-api"
+RATE_LIMIT_REQUESTS_PER_MINUTE = "100"
+RATE_LIMIT_BURST = "20"
+CACHE_TTL_SECONDS = "300"
+IDEMPOTENCY_TTL_HOURS = "24"
+DEFAULT_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
+
+# Example secrets (set via wrangler secret put)
+# API_KEY_SECRET = "your-api-key-secret"
+# JWT_SECRET = "your-jwt-secret"

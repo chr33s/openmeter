@@ -1,0 +1,48 @@
+{
+  "name": "openmeter-cf-workers-api",
+  "version": "1.0.0",
+  "description": "OpenMeter API implementation using Cloudflare Workers and Workers AI",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsc && wrangler publish --dry-run",
+    "deploy": "wrangler publish",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "db:generate": "drizzle-kit generate:sqlite",
+    "db:push": "drizzle-kit push:sqlite",
+    "db:migrate": "wrangler d1 migrations apply openmeter-db --remote",
+    "db:studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "cloudflare-workers",
+    "openmeter",
+    "usage-metering",
+    "workers-ai",
+    "typescript"
+  ],
+  "author": "OpenMeter Team",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250103.0",
+    "@types/node": "^22.10.8",
+    "@typescript-eslint/eslint-plugin": "^8.18.3",
+    "@typescript-eslint/parser": "^8.18.3",
+    "drizzle-kit": "^0.27.4",
+    "eslint": "^9.18.0",
+    "miniflare": "^3.20241223.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.103.0"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.37.0",
+    "hono": "^4.6.13",
+    "zod": "^3.24.1"
+  }
+}
