@@ -203,6 +203,9 @@ export interface LogContext {
 // Cache types
 export interface CacheEntry<T = any> {
   value: T;
+  data?: T; // Legacy property
+  timestamp?: number;
+  ttl?: number;
   expiresAt?: number;
   tags?: string[];
 }

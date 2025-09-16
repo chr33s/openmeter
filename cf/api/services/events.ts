@@ -50,7 +50,7 @@ export class EventsService {
         .returning({ id: events.id });
 
       return {
-        eventId: insertedEvent.id,
+        eventId: (insertedEvent as any[])?.[0]?.id || 'unknown',
         processed: true
       };
     } catch (error) {
@@ -157,7 +157,7 @@ export class EventsService {
           subjectId: event.subjectId,
           timestamp: event.timestamp,
           value: event.value,
-          properties: event.properties
+          properties: event.properties || undefined
         })),
         totalCount
       };

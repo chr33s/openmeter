@@ -22,12 +22,12 @@ export class CacheService {
 
       // Check if expired
       const now = Date.now();
-      if (now > cached.timestamp + (cached.ttl * 1000)) {
+      if (cached.timestamp && cached.ttl && now > cached.timestamp + (cached.ttl * 1000)) {
         await this.delete(key);
         return null;
       }
 
-      return cached.data;
+      return cached.data || cached.value;
     } catch (error) {
       console.error('Cache get error:', error);
       return null;
@@ -38,6 +38,7 @@ export class CacheService {
   async set<T>(key: string, data: T, ttl?: number): Promise<void> {
     try {
       const entry: CacheEntry<T> = {
+        value: data,
         data,
         timestamp: Date.now(),
         ttl: ttl || this.defaultTTL
