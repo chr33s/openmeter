@@ -1,0 +1,685 @@
+openapi: 3.0.0
+info:
+  title: OpenMeter Cloudflare Workers API
+  version: 1.0.0
+  description: |
+    OpenMeter API implementation using Cloudflare Workers, D1, KV, and Workers AI.
+    
+    This API provides usage metering and billing capabilities with:
+    - Real-time event ingestion
+    - Flexible meter configurations
+    - Subject and feature management
+    - Usage analytics and reporting
+    - AI-powered insights
+  contact:
+    name: OpenMeter Team
+    url: https://openmeter.io
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: https://your-worker.your-subdomain.workers.dev
+    description: Production server
+  - url: http://localhost:8787
+    description: Development server
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+
+paths:
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      description: Check the health status of the API and its dependencies
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /docs:
+    get:
+      tags: [System]
+      summary: API documentation
+      description: Get API documentation and endpoint information
+      responses:
+        '200':
+          description: API documentation
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /metrics:
+    get:
+      tags: [System]
+      summary: Get metrics
+      description: Get application metrics in JSON or Prometheus format
+      parameters:
+        - name: format
+          in: query
+          description: Output format
+          schema:
+            type: string
+            enum: [json, prometheus]
+            default: json
+      responses:
+        '200':
+          description: Metrics data
+          content:
+            application/json:
+              schema:
+                type: object
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/meters:
+    get:
+      tags: [Meters]
+      summary: List meters
+      description: Get a paginated list of meters
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - $ref: '#/components/parameters/Search'
+        - name: aggregation
+          in: query
+          description: Filter by aggregation type
+          schema:
+            $ref: '#/components/schemas/MeterAggregation'
+      responses:
+        '200':
+          description: List of meters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedMeterResponse'
+
+    post:
+      tags: [Meters]
+      summary: Create meter
+      description: Create a new meter configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMeterRequest'
+      responses:
+        '201':
+          description: Meter created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meter'
+        '409':
+          description: Meter with key already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/meters/{id}:
+    get:
+      tags: [Meters]
+      summary: Get meter
+      description: Get a meter by ID
+      parameters:
+        - $ref: '#/components/parameters/MeterId'
+      responses:
+        '200':
+          description: Meter details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meter'
+        '404':
+          description: Meter not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags: [Meters]
+      summary: Update meter
+      description: Update an existing meter (admin only)
+      parameters:
+        - $ref: '#/components/parameters/MeterId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeterRequest'
+      responses:
+        '200':
+          description: Meter updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Meter'
+        '404':
+          description: Meter not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Meters]
+      summary: Delete meter
+      description: Soft delete a meter (admin only)
+      parameters:
+        - $ref: '#/components/parameters/MeterId'
+      responses:
+        '200':
+          description: Meter deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  id:
+                    type: string
+                  deletedAt:
+                    type: string
+                    format: date-time
+
+  /api/v1/events:
+    get:
+      tags: [Events]
+      summary: Query events
+      description: Get events with optional filtering
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+        - name: meterId
+          in: query
+          description: Filter by meter ID
+          schema:
+            type: string
+        - name: subjectId
+          in: query
+          description: Filter by subject ID
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: Start time filter (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          description: End time filter (ISO 8601)
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: List of events
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEventResponse'
+
+    post:
+      tags: [Events]
+      summary: Ingest event
+      description: Ingest a single usage event
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestEventRequest'
+      responses:
+        '201':
+          description: Event ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestEventResponse'
+
+  /api/v1/events/batch:
+    post:
+      tags: [Events]
+      summary: Ingest batch events
+      description: Ingest multiple usage events in a single request
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchIngestEventRequest'
+      responses:
+        '201':
+          description: All events ingested successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchIngestEventResponse'
+        '207':
+          description: Partial success (some events failed)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchIngestEventResponse'
+
+  /api/v1/ai/models:
+    get:
+      tags: [AI]
+      summary: List AI models
+      description: Get available AI models
+      responses:
+        '200':
+          description: List of available models
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                        name:
+                          type: string
+                        description:
+                          type: string
+                  defaultModel:
+                    type: string
+
+  /api/v1/ai/complete:
+    post:
+      tags: [AI]
+      summary: AI completion
+      description: Complete text using AI models
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AICompleteRequest'
+      responses:
+        '200':
+          description: AI completion successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AICompleteResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: API key authentication
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authentication
+
+  parameters:
+    MeterId:
+      name: id
+      in: path
+      required: true
+      description: Meter ID
+      schema:
+        type: string
+        format: uuid
+
+    Limit:
+      name: limit
+      in: query
+      description: Number of items to return (max 100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+    Offset:
+      name: offset
+      in: query
+      description: Number of items to skip
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+
+    Search:
+      name: search
+      in: query
+      description: Search term
+      schema:
+        type: string
+
+    IdempotencyKey:
+      name: idempotency-key
+      in: header
+      description: Idempotency key for safe retries
+      schema:
+        type: string
+        maxLength: 255
+
+  schemas:
+    MeterAggregation:
+      type: string
+      enum: [SUM, COUNT, AVG, MIN, MAX, UNIQUE_COUNT, LATEST]
+
+    Meter:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: string
+        key:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        aggregation:
+          $ref: '#/components/schemas/MeterAggregation'
+        eventType:
+          type: string
+        eventFrom:
+          type: string
+          format: date-time
+        valueProperty:
+          type: string
+        groupBy:
+          type: object
+          additionalProperties:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateMeterRequest:
+      type: object
+      required: [key, name, aggregation, eventType]
+      properties:
+        key:
+          type: string
+          pattern: "^[a-z0-9]+(?:_[a-z0-9]+)*$"
+          maxLength: 64
+        name:
+          type: string
+        description:
+          type: string
+        aggregation:
+          $ref: '#/components/schemas/MeterAggregation'
+        eventType:
+          type: string
+        valueProperty:
+          type: string
+        groupBy:
+          type: object
+          additionalProperties:
+            type: string
+
+    UpdateMeterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        aggregation:
+          $ref: '#/components/schemas/MeterAggregation'
+        eventType:
+          type: string
+        valueProperty:
+          type: string
+        groupBy:
+          type: object
+          additionalProperties:
+            type: string
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        meterId:
+          type: string
+        subjectId:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+        properties:
+          type: object
+
+    IngestEventRequest:
+      type: object
+      required: [subject, type]
+      properties:
+        subject:
+          type: string
+        type:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+        value:
+          type: number
+        properties:
+          type: object
+
+    BatchIngestEventRequest:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/IngestEventRequest'
+          minItems: 1
+          maxItems: 1000
+
+    IngestEventResponse:
+      type: object
+      properties:
+        eventId:
+          type: string
+        processed:
+          type: boolean
+        timestamp:
+          type: string
+          format: date-time
+
+    BatchIngestEventResponse:
+      type: object
+      properties:
+        totalEvents:
+          type: integer
+        processedEvents:
+          type: integer
+        failedEvents:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    AICompleteRequest:
+      type: object
+      required: [prompt]
+      properties:
+        model:
+          type: string
+          description: AI model to use (optional, uses default if not specified)
+        prompt:
+          type: string
+          minLength: 1
+        max_tokens:
+          type: integer
+          minimum: 1
+          maximum: 4096
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+        stream:
+          type: boolean
+
+    AICompleteResponse:
+      type: object
+      properties:
+        model:
+          type: string
+        choices:
+          type: array
+          items:
+            type: object
+            properties:
+              text:
+                type: string
+              finish_reason:
+                type: string
+        usage:
+          type: object
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+            total_tokens:
+              type: integer
+
+    PaginatedMeterResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Meter'
+        totalCount:
+          type: integer
+        hasNextPage:
+          type: boolean
+        hasPreviousPage:
+          type: boolean
+        page:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    PaginatedEventResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        totalCount:
+          type: integer
+        hasNextPage:
+          type: boolean
+        hasPreviousPage:
+          type: boolean
+        page:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, down]
+        timestamp:
+          type: string
+          format: date-time
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [ok, error]
+            cache:
+              type: string
+              enum: [ok, error]
+            ai:
+              type: string
+              enum: [ok, error]
+        version:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+        timestamp:
+          type: string
+          format: date-time
+        requestId:
+          type: string
+
+tags:
+  - name: System
+    description: System endpoints (health, docs, metrics)
+  - name: Meters
+    description: Meter configuration and management
+  - name: Events
+    description: Event ingestion and querying
+  - name: Subjects
+    description: Subject management
+  - name: Features
+    description: Feature management
+  - name: Usage
+    description: Usage analytics and reporting
+  - name: AI
+    description: AI-powered features and insights
