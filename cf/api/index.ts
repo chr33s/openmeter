@@ -11,7 +11,6 @@ import { withRequestLogging } from '@/utils/logger';
 import { metrics } from '@/utils/metrics';
 import { createDatabaseService } from '@/services/database';
 import { createCacheService } from '@/services/cache';
-import { createAIService } from '@/services/ai';
 import { createEventsService } from '@/services/events';
 
 import { auth, extractNamespace } from '@/middleware/auth';
@@ -24,7 +23,6 @@ import eventsRouter from '@/routes/events';
 import subjectsRouter from '@/routes/subjects';
 import featuresRouter from '@/routes/features';
 import usageRouter from '@/routes/usage';
-import aiRouter from '@/routes/ai';
 
 // Create Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -83,13 +81,11 @@ app.use('/api/*', createMiddleware(async (c, next) => {
   // Initialize services
   const dbService = createDatabaseService(c.env);
   const cacheService = createCacheService(c.env);
-  const aiService = createAIService(c.env);
   const eventsService = createEventsService(dbService);
   
   // Inject services into context
   c.set('dbService', dbService);
   c.set('cacheService', cacheService);
-  c.set('aiService', aiService);
   c.set('eventsService', eventsService);
   
   await next();
@@ -136,10 +132,9 @@ app.get('/health', async (c) => {
     const aiService = createAIService(c.env);
     
     // Run health checks in parallel
-    const [dbHealth, cacheHealth, aiHealth] = await Promise.allSettled([
+    const [dbHealth, cacheHealth] = await Promise.allSettled([
       dbService.healthCheck(),
-      cacheService.healthCheck(),
-      aiService.healthCheck()
+      cacheService.healthCheck()
     ]);
     
     const health = {
@@ -147,8 +142,7 @@ app.get('/health', async (c) => {
       timestamp: new Date().toISOString(),
       checks: {
         database: dbHealth.status === 'fulfilled' && dbHealth.value ? 'ok' : 'error',
-        cache: cacheHealth.status === 'fulfilled' && cacheHealth.value ? 'ok' : 'error',
-        ai: aiHealth.status === 'fulfilled' && aiHealth.value ? 'ok' : 'error'
+        cache: cacheHealth.status === 'fulfilled' && cacheHealth.value ? 'ok' : 'error'
       },
       version: '1.0.0'
     };
@@ -175,8 +169,7 @@ app.get('/health', async (c) => {
       timestamp: new Date().toISOString(),
       checks: {
         database: 'error',
-        cache: 'error',
-        ai: 'error'
+        cache: 'error'
       },
       version: '1.0.0'
     }, 503);
@@ -212,8 +205,7 @@ app.get('/docs', async (c) => {
         events: 'GET,POST /api/v1/events',
         subjects: 'GET,POST,PUT,DELETE /api/v1/subjects',
         features: 'GET,POST,PUT,DELETE /api/v1/features',
-        usage: 'GET /api/v1/usage',
-        ai: 'POST /api/v1/ai/complete'
+        usage: 'GET /api/v1/usage'
       }
     },
     authentication: {
@@ -230,7 +222,6 @@ app.route('/api/v1/events', eventsRouter);
 app.route('/api/v1/subjects', subjectsRouter);
 app.route('/api/v1/features', featuresRouter);
 app.route('/api/v1/usage', usageRouter);
-app.route('/api/v1/ai', aiRouter);
 
 // 404 handler
 app.notFound((c) => {

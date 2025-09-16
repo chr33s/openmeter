@@ -1,13 +1,12 @@
 # OpenMeter Cloudflare Workers API
 
-A TypeScript implementation of OpenMeter's API using Cloudflare Workers, Workers AI, D1 database, and KV storage.
+A TypeScript implementation of OpenMeter's API using Cloudflare Workers, D1 database, and KV storage.
 
 ## Overview
 
 This project provides a complete OpenMeter API implementation that runs on Cloudflare's edge infrastructure, offering:
 
 - **High Performance**: Runs on Cloudflare's global edge network
-- **AI Integration**: Leverages Workers AI with models from https://developers.cloudflare.com/llms-full.txt
 - **SQL Database**: Uses Cloudflare D1 with Drizzle ORM for data persistence
 - **Caching**: Implements KV-based caching for optimal performance
 - **Security**: API key authentication, JWT support, rate limiting, and CORS
@@ -22,7 +21,6 @@ This project provides a complete OpenMeter API implementation that runs on Cloud
 - **Subjects**: Manage entities that consume resources (users, services, etc.)
 - **Features**: Configure and manage product features
 - **Usage**: Query aggregated usage data with flexible time windows
-- **AI Utilities**: Proxy to Workers AI with model selection
 - **Health & Docs**: System health checks and API documentation
 
 ### Infrastructure Features
@@ -113,7 +111,7 @@ The Cloudflare Workers API provides complete parity with OpenMeter's core functi
 
 #### Health Check
 - **GET** `/health` - Get service health status
-  - Returns health status of database, cache, and AI services
+  - Returns health status of database and cache services
   - Response: `200 OK` (healthy) or `503 Service Unavailable` (degraded/down)
 
 #### Documentation
@@ -284,154 +282,3 @@ Query aggregated usage data with flexible time windows and aggregation methods.
   - Query parameters: Similar to usage query
   - Response: Simplified usage report format
 
-### AI Integration
-
-Leverage Cloudflare Workers AI for text completion and analysis.
-
-#### List AI Models
-- **GET** `/api/v1/ai/models` - Get available AI models
-  - Headers: `x-api-key` or `Authorization: Bearer <token>`
-  - Response: List of available LLM models from Cloudflare's catalog
-
-#### AI Completion
-- **POST** `/api/v1/ai/complete` - Complete text using AI
-  - Headers: `x-api-key` or `Authorization: Bearer <token>`
-  - Body:
-    - `prompt` (required): Text prompt for completion
-    - `model` (optional): Specific model ID (defaults to configured model)
-    - `max_tokens` (optional): Maximum tokens to generate (1-4096)
-    - `temperature` (optional): Randomness control (0-2)
-  - Response: AI completion with generated text and usage statistics
-
-#### AI Health Check
-- **GET** `/api/v1/ai/health` - Check AI service health
-  - Headers: `x-api-key` or `Authorization: Bearer <token>`
-  - Response: AI service health status and default model info
-
-### Authentication
-
-The API supports two authentication methods:
-
-1. **API Key**: Include `x-api-key` header with your API key
-2. **JWT Token**: Include `Authorization: Bearer <token>` header
-
-### Rate Limiting
-
-- Default: 100 requests per minute per IP
-- Burst: 20 requests
-- Configurable via environment variables
-
-### Caching
-
-- List endpoints cached for 5 minutes (configurable)
-- Cache automatically invalidated on write operations
-- Uses Cloudflare KV for distributed caching
-
-## Database Schema
-
-### Tables
-
-- `meters`: Metering configurations
-- `subjects`: Resource consumers (users, services)
-- `events`: Raw usage events
-- `features`: Product features
-- `usage_aggregates`: Pre-computed usage rollups
-
-### Migrations
-
-Database schema is managed through Drizzle migrations:
-
-```bash
-# Generate new migration
-npm run db:generate
-
-# Apply migrations
-npm run db:migrate
-```
-
-## AI Integration
-
-The API includes Workers AI integration with support for:
-
-- Text completion and generation
-- Model selection from Cloudflare's LLM catalog
-- Configurable default models
-- Error handling and fallbacks
-
-Available at `POST /api/v1/ai/complete` with model selection.
-
-## Configuration
-
-Environment variables in `wrangler.toml`:
-
-- `CORS_ORIGINS`: Allowed CORS origins (default: "*")
-- `RATE_LIMIT_REQUESTS_PER_MINUTE`: Rate limit threshold
-- `CACHE_TTL_SECONDS`: Cache TTL for read operations
-- `DEFAULT_AI_MODEL`: Default AI model for completion
-
-Secrets (via `wrangler secret put`):
-
-- `API_KEY_SECRET`: Secret for API key validation
-- `JWT_SECRET`: Secret for JWT token validation
-
-## Testing
-
-```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run specific test file
-npm test -- events.test.ts
-```
-
-Tests use Miniflare for local Workers environment simulation.
-
-## Project Structure
-
-```
-cf/
-├── api/                      # Source code
-│   ├── index.ts              # Main application entry
-│   ├── routes/               # API route handlers
-│   │   ├── meters.ts
-│   │   ├── events.ts
-│   │   ├── subjects.ts
-│   │   ├── features.ts
-│   │   ├── usage.ts
-│   │   └── ai.ts
-│   ├── middleware/           # Request middleware
-│   │   ├── auth.ts
-│   │   ├── rateLimit.ts
-│   │   └── validation.ts
-│   ├── services/             # Business logic services
-│   │   ├── database.ts
-│   │   ├── cache.ts
-│   │   ├── events.ts
-│   │   └── ai.ts
-│   ├── utils/                # Utility functions
-│   │   ├── logger.ts
-│   │   ├── pagination.ts
-│   │   └── metrics.ts
-│   └── types/                # TypeScript type definitions
-│       └── index.ts
-├── migrations/               # Database migrations
-├── tests/                    # Test files
-├── openapi.yaml             # OpenAPI specification
-└── README.md
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass
-6. Submit a pull request
-
-## License
-
-Apache 2.0 - see LICENSE file for details.

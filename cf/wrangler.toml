@@ -22,9 +22,6 @@ binding = "KV_CACHE"
 id = ""
 preview_id = ""
 
-[ai]
-binding = "AI"
-
 [vars]
 ENVIRONMENT = "development"
 CORS_ORIGINS = "*"
@@ -35,7 +32,6 @@ RATE_LIMIT_REQUESTS_PER_MINUTE = "100"
 RATE_LIMIT_BURST = "20"
 CACHE_TTL_SECONDS = "300"
 IDEMPOTENCY_TTL_HOURS = "24"
-DEFAULT_AI_MODEL = "@cf/meta/llama-3.1-8b-instruct"
 
 # Example secrets (set via wrangler secret put)
 # API_KEY_SECRET = "your-api-key-secret"

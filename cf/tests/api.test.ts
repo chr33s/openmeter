@@ -21,7 +21,6 @@ beforeAll(async () => {
       RATE_LIMIT_BURST: '100',
       CACHE_TTL_SECONDS: '300',
       IDEMPOTENCY_TTL_HOURS: '24',
-      DEFAULT_AI_MODEL: '@cf/meta/llama-3.1-8b-instruct',
       API_KEY_SECRET: 'test-secret',
       JWT_SECRET: 'test-jwt-secret'
     },
@@ -33,7 +32,6 @@ beforeAll(async () => {
     kvNamespaces: {
       KV_CACHE: {}
     },
-    // Note: AI binding simulation is limited in Miniflare
     modules: true,
     compatibilityDate: '2024-01-15'
   });
@@ -160,11 +158,6 @@ describe('Request Validation', () => {
   });
 });
 
-describe('AI Endpoints', () => {
-  test('GET /api/v1/ai/models requires authentication', async () => {
-    const response = await mf.dispatchFetch('http://localhost/api/v1/ai/models');
-    expect(response.status).toBe(401);
-  });
 });
 
 // Note: More comprehensive tests would require:

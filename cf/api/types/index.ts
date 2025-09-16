@@ -6,7 +6,6 @@ import { z } from 'zod';
 export interface Env {
   D1_DB: D1Database;
   KV_CACHE: KVNamespace;
-  AI: Ai;
   
   // Environment variables
   ENVIRONMENT: string;
@@ -18,7 +17,6 @@ export interface Env {
   RATE_LIMIT_BURST: string;
   CACHE_TTL_SECONDS: string;
   IDEMPOTENCY_TTL_HOURS: string;
-  DEFAULT_AI_MODEL: string;
   
   // Secrets
   API_KEY_SECRET: string;
@@ -214,83 +212,3 @@ export interface UsageDataPoint {
   groupBy?: Record<string, string>;
 }
 
-// AI API types
-export const AICompleteSchema = z.object({
-  model: z.string().optional(),
-  prompt: z.string().min(1),
-  max_tokens: z.number().min(1).max(4096).optional(),
-  temperature: z.number().min(0).max(2).optional(),
-  stream: z.boolean().optional()
-});
-
-export type AICompleteRequest = z.infer<typeof AICompleteSchema>;
-
-export interface AICompleteResponse {
-  model: string;
-  choices: Array<{
-    text: string;
-    finish_reason: string;
-  }>;
-  usage: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
-}
-
-// Error types
-export interface APIError {
-  error: {
-    code: string;
-    message: string;
-    details?: any;
-  };
-  timestamp: string;
-  requestId: string;
-}
-
-// Auth types
-export interface AuthContext {
-  authenticated: boolean;
-  apiKeyValid: boolean;
-  jwtValid: boolean;
-  userId?: string;
-  role?: 'admin' | 'read';
-}
-
-// Cache types
-export interface CacheEntry<T = any> {
-  data: T;
-  timestamp: number;
-  ttl: number;
-}
-
-// Logger types
-export interface LogContext {
-  requestId: string;
-  method: string;
-  url: string;
-  userAgent?: string;
-  cf?: any;
-  startTime: number;
-}
-
-// Rate limiting types
-export interface RateLimitResult {
-  allowed: boolean;
-  remaining: number;
-  resetTime: number;
-  retryAfter?: number;
-}
-
-// Health check types
-export interface HealthCheckResponse {
-  status: 'ok' | 'degraded' | 'down';
-  timestamp: string;
-  checks: {
-    database: 'ok' | 'error';
-    cache: 'ok' | 'error';
-    ai: 'ok' | 'error';
-  };
-  version: string;
-}

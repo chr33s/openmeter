@@ -413,4 +413,74 @@ app.delete('/:id',
   }
 );
 
+// Query meter usage - additional endpoint for parity
+app.get('/:id/query',
+  requireAuth(),
+  validate('param', z.object({ id: commonSchemas.uuid.or(commonSchemas.ulid) })),
+  validate('query', z.object({
+    from: z.string().datetime(),
+    to: z.string().datetime(),
+    windowSize: z.enum(['MINUTE', 'HOUR', 'DAY', 'MONTH']).optional(),
+    subject: z.string().optional(),
+    groupBy: z.array(z.string()).optional()
+  })),
+  async (c) => {
+    const logger = withRequestLogging(c.req);
+    const dbService = c.get('dbService');
+    const namespace = c.get('namespace');
+    const id = c.req.param('id');
+    const query = c.req.valid('query');
+    
+    try {
+      // This would typically call a usage query service
+      // For now, return a placeholder response
+      logger.info('Queried meter usage', { id, namespace, query });
+      
+      return c.json({
+        meterId: id,
+        from: query.from,
+        to: query.to,
+        windowSize: query.windowSize || 'HOUR',
+        data: [],
+        message: 'Meter query endpoint - implementation pending'
+      });
+    } catch (error) {
+      logger.error('Failed to query meter', error as Error, { id });
+      throw error;
+    }
+  }
+);
+
+// Get subjects for a meter - additional endpoint for parity
+app.get('/:id/subjects',
+  requireAuth(),
+  validate('param', z.object({ id: commonSchemas.uuid.or(commonSchemas.ulid) })),
+  validate('query', commonSchemas.paginationQuery),
+  async (c) => {
+    const logger = withRequestLogging(c.req);
+    const dbService = c.get('dbService');
+    const namespace = c.get('namespace');
+    const id = c.req.param('id');
+    const query = c.req.valid('query');
+    
+    try {
+      // This would typically query subjects that have events for this meter
+      // For now, return a placeholder response
+      logger.info('Listed meter subjects', { id, namespace, query });
+      
+      return c.json({
+        meterId: id,
+        subjects: [],
+        totalCount: 0,
+        hasNextPage: false,
+        hasPreviousPage: false,
+        message: 'Meter subjects endpoint - implementation pending'
+      });
+    } catch (error) {
+      logger.error('Failed to list meter subjects', error as Error, { id });
+      throw error;
+    }
+  }
+);
+
 export default app;
