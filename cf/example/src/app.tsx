@@ -1,11 +1,11 @@
 import React from 'react'
 import { Routes, Route } from 'react-router-dom'
-import { Navigation, Header } from './components/Navigation'
-import { Dashboard } from './routes/Dashboard'
-import { Usage } from './routes/Usage'
-import { Events } from './routes/Events'
-import { Entitlements } from './routes/Entitlements'
-import { Plans } from './routes/Plans'
+import { Navigation, Header } from './components/navigation'
+import { Dashboard } from './routes/dashboard'
+import { Usage } from './routes/usage'
+import { Events } from './routes/events'
+import { Entitlements } from './routes/entitlements'
+import { Plans } from './routes/plans'
 
 function App() {
   return (

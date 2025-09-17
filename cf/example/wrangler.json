@@ -1,0 +1,23 @@
+{
+  "name": "openmeter-customer-dashboard",
+  "compatibility_date": "2024-01-01",
+  "build": {
+    "command": "npm run build",
+    "cwd": "."
+  },
+  "pages": {
+    "directory": "dist",
+    "redirects": [
+      {
+        "from": "/api/*",
+        "to": "http://localhost:8888/api/:splat",
+        "status": 200
+      },
+      {
+        "from": "/*",
+        "to": "/index.html",
+        "status": 200
+      }
+    ]
+  }
+}

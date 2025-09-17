@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { apiClient, MeterQueryResult, UsageReport } from '../lib/api'
-import { Card, MetricCard } from '../components/Card'
-import { Chart } from '../components/Chart'
-import { LoadingState, ErrorState } from '../components/LoadingError'
+import { Card, MetricCard } from '../components/card'
+import { Chart } from '../components/chart'
+import { LoadingState, ErrorState } from '../components/loading-error'
 
 export function Dashboard() {
   const [usageData, setUsageData] = useState<MeterQueryResult | null>(null)

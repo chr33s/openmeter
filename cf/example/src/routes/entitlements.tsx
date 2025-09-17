@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { apiClient, Entitlement, PaginationResponse } from '../lib/api'
-import { Card } from '../components/Card'
-import { Table, Pagination } from '../components/Table'
-import { LoadingState, ErrorState, EmptyState } from '../components/LoadingError'
+import { Card } from '../components/card'
+import { Table, Pagination } from '../components/table'
+import { LoadingState, ErrorState, EmptyState } from '../components/loading-error'
 
 export function Entitlements() {
   const [entitlements, setEntitlements] = useState<PaginationResponse<Entitlement> | null>(null)

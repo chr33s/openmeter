@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { apiClient, MeterQueryResult, MeterQueryParams } from '../lib/api'
-import { Card } from '../components/Card'
-import { Chart } from '../components/Chart'
-import { Table } from '../components/Table'
-import { LoadingState, ErrorState } from '../components/LoadingError'
+import { Card } from '../components/card'
+import { Chart } from '../components/chart'
+import { Table } from '../components/table'
+import { LoadingState, ErrorState } from '../components/loading-error'
 
 export function Usage() {
   const [usageData, setUsageData] = useState<MeterQueryResult | null>(null)
