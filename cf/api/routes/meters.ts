@@ -38,7 +38,7 @@ app.get(
 		"query",
 		commonSchemas.paginationQuery.extend({
 			search: commonSchemas.filterQuery.shape.search,
-			aggregation: z.nativeEnum(MeterAggregation).optional(),
+			aggregation: z.enum(MeterAggregation).optional(),
 		}),
 	),
 	async (c) => {
@@ -476,8 +476,8 @@ app.get(
 	validate(
 		"query",
 		z.object({
-			from: z.string().datetime(),
-			to: z.string().datetime(),
+			from: z.string().check(z.iso.datetime()),
+			to: z.string().check(z.iso.datetime()),
 			windowSize: z.enum(["MINUTE", "HOUR", "DAY", "MONTH"]).optional(),
 			subject: z.string().optional(),
 			groupBy: z.array(z.string()).optional(),

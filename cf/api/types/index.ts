@@ -142,7 +142,7 @@ export const CreateMeterSchema = z.object({
 		.regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/),
 	name: z.string().min(1),
 	description: z.string().optional(),
-	aggregation: z.nativeEnum(MeterAggregation),
+	aggregation: z.enum(MeterAggregation),
 	eventType: z.string().min(1),
 	valueProperty: z.string().optional(),
 	groupBy: z.record(z.string(), z.string()).optional().default({}),
@@ -174,7 +174,7 @@ export type UpdateSubjectRequest = z.infer<typeof UpdateSubjectSchema>;
 export const IngestEventSchema = z.object({
 	subject: z.string().min(1),
 	type: z.string().min(1),
-	timestamp: z.string().datetime().optional(),
+	timestamp: z.string().check(z.iso.datetime()).optional(),
 	value: z.number().optional(),
 	properties: z.record(z.string(), z.any()).optional(),
 });
@@ -247,9 +247,9 @@ export type UpdateFeatureRequest = z.infer<typeof UpdateFeatureSchema>;
 export const UsageQuerySchema = z.object({
 	meterId: z.string().optional(),
 	subjectId: z.string().optional(),
-	from: z.string().datetime(),
-	to: z.string().datetime(),
-	windowSize: z.nativeEnum(WindowSize).optional(),
+	from: z.string().check(z.iso.datetime()),
+	to: z.string().check(z.iso.datetime()),
+	windowSize: z.enum(WindowSize).optional(),
 	groupBy: z.array(z.string()).optional(),
 });
 

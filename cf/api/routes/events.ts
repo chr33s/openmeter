@@ -45,8 +45,8 @@ app.get(
 		commonSchemas.paginationQuery.extend({
 			meterId: z.string().optional(),
 			subjectId: z.string().optional(),
-			from: z.string().datetime().optional(),
-			to: z.string().datetime().optional(),
+			from: z.string().check(z.iso.datetime()).optional(),
+			to: z.string().check(z.iso.datetime()).optional(),
 		}),
 	),
 	async (c) => {
