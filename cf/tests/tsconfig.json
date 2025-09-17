@@ -1,4 +1,8 @@
 {
 	"extends": "../tsconfig.json",
-	"include": ["./**/*"]
+	"include": ["./**/*"],
+	"compilerOptions": {
+		// Allow tests outside api/ to be part of the program
+		"rootDir": ".."
+	}
 }

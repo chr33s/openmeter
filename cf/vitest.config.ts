@@ -9,7 +9,9 @@ export default defineWorkersConfig({
 				main: "./api/index.ts",
 				miniflare: {
 					bindings: {
+						API_KEY_SECRET: "test-secret",
 						ENVIRONMENT: "test",
+						JWT_SECRET: "test-jwt",
 					},
 				},
 				wrangler: { configPath: "./wrangler.json" },
