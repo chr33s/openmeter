@@ -1,49 +1,46 @@
 {
-  "name": "openmeter-cf-workers-api",
-  "version": "1.0.0",
-  "description": "OpenMeter API implementation using Cloudflare Workers and Workers AI",
-  "main": "dist/index.js",
-  "scripts": {
-    "dev": "wrangler dev",
-    "build": "tsc && wrangler publish --dry-run",
-    "deploy": "wrangler publish",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "lint": "eslint api --ext .ts",
-    "lint:fix": "eslint api --ext .ts --fix",
-    "format": "prettier --write api/**/*.ts",
-    "db:generate": "drizzle-kit generate:sqlite",
-    "db:push": "drizzle-kit push:sqlite",
-    "db:migrate": "wrangler d1 migrations apply openmeter-db --remote",
-    "db:studio": "drizzle-kit studio",
-    "typecheck": "tsc --noEmit"
-  },
-  "keywords": [
-    "cloudflare-workers",
-    "openmeter",
-    "usage-metering",
-    "workers-ai",
-    "typescript"
-  ],
-  "author": "OpenMeter Team",
-  "license": "Apache-2.0",
-  "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250913.0",
-    "@types/node": "^22.18.4",
-    "@typescript-eslint/eslint-plugin": "^8.18.3",
-    "@typescript-eslint/parser": "^8.18.3",
-    "drizzle-kit": "^0.26.2",
-    "eslint": "^9.18.0",
-    "miniflare": "^3.20241223.0",
-    "prettier": "^3.4.2",
-    "typescript": "^5.7.3",
-    "vitest": "^2.1.8",
-    "wrangler": "^3.103.0"
-  },
-  "dependencies": {
-    "@hono/zod-validator": "^0.4.1",
-    "drizzle-orm": "^0.36.4",
-    "hono": "^4.6.13",
-    "zod": "^3.24.1"
-  }
+	"name": "openmeter-cf-workers",
+	"version": "1.0.0",
+	"description": "OpenMeter API implementation using Cloudflare Workers and Workers AI",
+	"main": "dist/index.js",
+	"scripts": {
+		"check": "prettier --check . && oxlint --import-plugin --node-plugin --promise-plugin --regex-plugin . && tsc --noEmit",
+		"dev": "wrangler dev",
+		"build": "tsc && wrangler publish --dry-run",
+		"db:generate": "drizzle-kit generate:sqlite",
+		"db:push": "drizzle-kit push:sqlite",
+		"db:migrate": "wrangler d1 migrations apply openmeter-db --remote",
+		"deploy": "wrangler publish",
+		"fix": "prettier --write . && oxlint --fix --fix-suggestions --import-plugin --node-plugin --promise-plugin --regex-plugin .",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"typecheck": "tsc --noEmit"
+	},
+	"imports": {
+		"#/*": "./api/*"
+	},
+	"author": "OpenMeter Team",
+	"license": "Apache-2.0",
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.9.2",
+		"@prettier/plugin-oxc": "^0.0.4",
+		"@types/node": "24.5.1",
+		"drizzle-kit": "0.31.4",
+		"oxlint": "^1.16.0",
+		"prettier": "3.6.2",
+		"typescript": "5.9.2",
+		"vitest": "~3.0.0",
+		"wrangler": "4.37.1"
+	},
+	"dependencies": {
+		"@hono/zod-validator": "0.7.3",
+		"drizzle-orm": "0.44.5",
+		"hono": "4.9.7",
+		"zod": "4.1.9"
+	},
+	"prettier": {
+		"plugins": [
+			"@prettier/plugin-oxc"
+		]
+	}
 }

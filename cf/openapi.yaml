@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     OpenMeter API implementation using Cloudflare Workers, D1, and KV.
-    
+
     This API provides usage metering and billing capabilities with:
     - Real-time event ingestion
     - Flexible meter configurations
@@ -34,18 +34,18 @@ paths:
       summary: Health check
       description: Check the health status of the API and its dependencies
       responses:
-        '200':
+        "200":
           description: Service is healthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
-        '503':
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
           description: Service is unhealthy
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
+                $ref: "#/components/schemas/HealthResponse"
 
   /docs:
     get:
@@ -53,7 +53,7 @@ paths:
       summary: API documentation
       description: Get API documentation and endpoint information
       responses:
-        '200':
+        "200":
           description: API documentation
           content:
             application/json:
@@ -74,7 +74,7 @@ paths:
             enum: [json, prometheus]
             default: json
       responses:
-        '200':
+        "200":
           description: Metrics data
           content:
             application/json:
@@ -90,21 +90,21 @@ paths:
       summary: List meters
       description: Get a paginated list of meters
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
-        - $ref: '#/components/parameters/Search'
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
+        - $ref: "#/components/parameters/Search"
         - name: aggregation
           in: query
           description: Filter by aggregation type
           schema:
-            $ref: '#/components/schemas/MeterAggregation'
+            $ref: "#/components/schemas/MeterAggregation"
       responses:
-        '200':
+        "200":
           description: List of meters
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedMeterResponse'
+                $ref: "#/components/schemas/PaginatedMeterResponse"
 
     post:
       tags: [Meters]
@@ -115,20 +115,20 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateMeterRequest'
+              $ref: "#/components/schemas/CreateMeterRequest"
       responses:
-        '201':
+        "201":
           description: Meter created successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Meter'
-        '409':
+                $ref: "#/components/schemas/Meter"
+        "409":
           description: Meter with key already exists
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /api/v1/meters/{id}:
     get:
@@ -136,55 +136,55 @@ paths:
       summary: Get meter
       description: Get a meter by ID
       parameters:
-        - $ref: '#/components/parameters/MeterId'
+        - $ref: "#/components/parameters/MeterId"
       responses:
-        '200':
+        "200":
           description: Meter details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Meter'
-        '404':
+                $ref: "#/components/schemas/Meter"
+        "404":
           description: Meter not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
     put:
       tags: [Meters]
       summary: Update meter
       description: Update an existing meter (admin only)
       parameters:
-        - $ref: '#/components/parameters/MeterId'
+        - $ref: "#/components/parameters/MeterId"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateMeterRequest'
+              $ref: "#/components/schemas/UpdateMeterRequest"
       responses:
-        '200':
+        "200":
           description: Meter updated successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Meter'
-        '404':
+                $ref: "#/components/schemas/Meter"
+        "404":
           description: Meter not found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
     delete:
       tags: [Meters]
       summary: Delete meter
       description: Soft delete a meter (admin only)
       parameters:
-        - $ref: '#/components/parameters/MeterId'
+        - $ref: "#/components/parameters/MeterId"
       responses:
-        '200':
+        "200":
           description: Meter deleted successfully
           content:
             application/json:
@@ -205,8 +205,8 @@ paths:
       summary: Query events
       description: Get events with optional filtering
       parameters:
-        - $ref: '#/components/parameters/Limit'
-        - $ref: '#/components/parameters/Offset'
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Offset"
         - name: meterId
           in: query
           description: Filter by meter ID
@@ -230,32 +230,32 @@ paths:
             type: string
             format: date-time
       responses:
-        '200':
+        "200":
           description: List of events
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedEventResponse'
+                $ref: "#/components/schemas/PaginatedEventResponse"
 
     post:
       tags: [Events]
       summary: Ingest event
       description: Ingest a single usage event
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IngestEventRequest'
+              $ref: "#/components/schemas/IngestEventRequest"
       responses:
-        '201':
+        "201":
           description: Event ingested successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IngestEventResponse'
+                $ref: "#/components/schemas/IngestEventResponse"
 
   /api/v1/events/batch:
     post:
@@ -263,24 +263,23 @@ paths:
       summary: Ingest batch events
       description: Ingest multiple usage events in a single request
       parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BatchIngestEventRequest'
+              $ref: "#/components/schemas/BatchIngestEventRequest"
       responses:
-        '201':
+        "201":
           description: All events ingested successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BatchIngestEventResponse'
-        '207':
+                $ref: "#/components/schemas/BatchIngestEventResponse"
+        "207":
           description: Partial success (some events failed)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BatchIngestEventResponse'
-
+                $ref: "#/components/schemas/BatchIngestEventResponse"
