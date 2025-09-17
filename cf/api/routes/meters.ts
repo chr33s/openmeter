@@ -8,7 +8,9 @@ import type {
 	CreateMeterRequest,
 	UpdateMeterRequest,
 	Meter,
+	PaginationResponse,
 } from "#/types";
+import { MeterAggregation } from "#/types";
 import { CreateMeterSchema, UpdateMeterSchema } from "#/types";
 import { meters } from "#/services/database";
 import { requireAuth, requireAdmin } from "#/middleware/auth";
@@ -36,7 +38,7 @@ app.get(
 		"query",
 		commonSchemas.paginationQuery.extend({
 			search: commonSchemas.filterQuery.shape.search,
-			aggregation: commonSchemas.filterQuery.shape.status.optional(),
+			aggregation: z.nativeEnum(MeterAggregation).optional(),
 		}),
 	),
 	async (c) => {
@@ -57,7 +59,8 @@ app.get(
 			);
 
 			// Try cache first
-			const cached = await cacheService.get(cacheKey);
+			const cached =
+				await cacheService.get<PaginationResponse<Meter>>(cacheKey);
 			if (cached) {
 				logger.cacheOperation("hit", cacheKey);
 				const response = new Response(JSON.stringify(cached));
@@ -97,13 +100,12 @@ app.get(
 			const metersResult = await metersQuery;
 
 			// Count total
-			const countQuery = database
-				.select({ count: sql`count(*)` })
+			const countRows = await database
+				.select({ count: sql<number>`count(*)` })
 				.from(meters)
 				.where(and(...conditions));
 
-			const [{ count }] = await countQuery;
-			const totalCount = Number(count);
+			const totalCount = Number(countRows[0]?.count ?? 0);
 
 			const result = pagination.createResponse(
 				metersResult.map(
@@ -113,11 +115,11 @@ app.get(
 							namespace: meter.namespace,
 							key: meter.key,
 							name: meter.name,
-							description: meter.description,
-							aggregation: meter.aggregation,
+							description: meter.description ?? undefined,
+							aggregation: meter.aggregation as Meter["aggregation"],
 							eventType: meter.eventType,
-							eventFrom: meter.eventFrom,
-							valueProperty: meter.valueProperty,
+							eventFrom: meter.eventFrom ?? undefined,
+							valueProperty: meter.valueProperty ?? undefined,
 							groupBy: meter.groupBy || {},
 							createdAt: meter.createdAt,
 							updatedAt: meter.updatedAt,
@@ -197,17 +199,17 @@ app.get(
 				);
 			}
 
-			const meter = metersResult[0];
+			const meter = metersResult[0]!;
 			const result: Meter = {
 				id: meter.id,
 				namespace: meter.namespace,
 				key: meter.key,
 				name: meter.name,
-				description: meter.description,
-				aggregation: meter.aggregation,
+				description: meter.description ?? undefined,
+				aggregation: meter.aggregation as Meter["aggregation"],
 				eventType: meter.eventType,
-				eventFrom: meter.eventFrom,
-				valueProperty: meter.valueProperty,
+				eventFrom: meter.eventFrom ?? undefined,
+				valueProperty: meter.valueProperty ?? undefined,
 				groupBy: meter.groupBy || {},
 				createdAt: meter.createdAt,
 				updatedAt: meter.updatedAt,
@@ -278,6 +280,10 @@ app.post(
 				})
 				.returning();
 
+			if (!newMeter) {
+				throw new Error("Failed to insert meter");
+			}
+
 			// Invalidate cache
 			await cacheService.invalidatePattern(`meters:${namespace}`);
 
@@ -286,11 +292,11 @@ app.post(
 				namespace: newMeter.namespace,
 				key: newMeter.key,
 				name: newMeter.name,
-				description: newMeter.description,
-				aggregation: newMeter.aggregation,
+				description: newMeter.description ?? undefined,
+				aggregation: newMeter.aggregation as Meter["aggregation"],
 				eventType: newMeter.eventType,
-				eventFrom: newMeter.eventFrom,
-				valueProperty: newMeter.valueProperty,
+				eventFrom: newMeter.eventFrom ?? undefined,
+				valueProperty: newMeter.valueProperty ?? undefined,
 				groupBy: newMeter.groupBy || {},
 				createdAt: newMeter.createdAt,
 				updatedAt: newMeter.updatedAt,
@@ -366,6 +372,10 @@ app.put(
 				.where(and(eq(meters.id, id), eq(meters.namespace, namespace)))
 				.returning();
 
+			if (!updatedMeter) {
+				throw new Error("Failed to update meter");
+			}
+
 			// Invalidate cache
 			await cacheService.invalidatePattern(`meters:${namespace}`);
 			await cacheService.delete(CacheService.createKey("meter", namespace, id));
@@ -375,11 +385,11 @@ app.put(
 				namespace: updatedMeter.namespace,
 				key: updatedMeter.key,
 				name: updatedMeter.name,
-				description: updatedMeter.description,
-				aggregation: updatedMeter.aggregation,
+				description: updatedMeter.description ?? undefined,
+				aggregation: updatedMeter.aggregation as Meter["aggregation"],
 				eventType: updatedMeter.eventType,
-				eventFrom: updatedMeter.eventFrom,
-				valueProperty: updatedMeter.valueProperty,
+				eventFrom: updatedMeter.eventFrom ?? undefined,
+				valueProperty: updatedMeter.valueProperty ?? undefined,
 				groupBy: updatedMeter.groupBy || {},
 				createdAt: updatedMeter.createdAt,
 				updatedAt: updatedMeter.updatedAt,

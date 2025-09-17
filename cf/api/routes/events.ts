@@ -2,7 +2,13 @@
 
 import { Hono } from "hono";
 import { z } from "zod";
-import type { Env, IngestEventRequest, BatchIngestEventRequest } from "#/types";
+import type {
+	Env,
+	IngestEventRequest,
+	BatchIngestEventRequest,
+	Event,
+	PaginationResponse,
+} from "#/types";
 import { IngestEventSchema, BatchIngestEventSchema } from "#/types";
 import { requireAuth } from "#/middleware/auth";
 import {
@@ -61,7 +67,8 @@ app.get(
 			);
 
 			// Try cache first (shorter TTL for events)
-			const cached = await cacheService.get(cacheKey);
+			const cached =
+				await cacheService.get<PaginationResponse<Event>>(cacheKey);
 			if (cached) {
 				logger.cacheOperation("hit", cacheKey);
 				const response = new Response(JSON.stringify(cached));

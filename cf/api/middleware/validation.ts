@@ -17,10 +17,16 @@ export const validate = <T extends z.ZodSchema>(
 					error: {
 						code: "VALIDATION_ERROR",
 						message: "Request validation failed",
-						details: formatZodError(result.error),
+						// Cast to unknown to satisfy invariant generic on ZodError
+						details: formatZodError(
+							result.error as unknown as z.ZodError<unknown>,
+						),
 					},
 					timestamp: new Date().toISOString(),
-					requestId: c.get("requestId"),
+					// The validator callback context may not carry Variables typing; use a safe cast
+					requestId: (c.get as unknown as (key: string) => unknown)(
+						"requestId",
+					) as string | undefined,
 				},
 				400,
 			);
@@ -29,12 +35,12 @@ export const validate = <T extends z.ZodSchema>(
 };
 
 // Format Zod validation errors
-function formatZodError(error: z.ZodError): Array<{
+function formatZodError(error: z.ZodError<unknown>): Array<{
 	field: string;
 	message: string;
 	code: string;
 }> {
-	return error.errors.map((err) => ({
+	return error.issues.map((err) => ({
 		field: err.path.join("."),
 		message: err.message,
 		code: err.code,
@@ -143,39 +149,41 @@ export const validateRequestId = () =>
 export const validateContentType = (
 	expectedType: string = "application/json",
 ) =>
-	createMiddleware<{ Bindings: Env }>(async (c, next) => {
-		const method = c.req.method;
+	createMiddleware<{ Bindings: Env; Variables: { requestId: string } }>(
+		async (c, next) => {
+			const method = c.req.method;
 
-		if (method === "POST" || method === "PUT" || method === "PATCH") {
-			const contentType = c.req.header("content-type");
+			if (method === "POST" || method === "PUT" || method === "PATCH") {
+				const contentType = c.req.header("content-type");
 
-			if (!contentType || !contentType.includes(expectedType)) {
-				return c.json(
-					{
-						error: {
-							code: "INVALID_CONTENT_TYPE",
-							message: `Content-Type must be ${expectedType}`,
-							details: {
-								expected: expectedType,
-								received: contentType || "none",
+				if (!contentType || !contentType.includes(expectedType)) {
+					return c.json(
+						{
+							error: {
+								code: "INVALID_CONTENT_TYPE",
+								message: `Content-Type must be ${expectedType}`,
+								details: {
+									expected: expectedType,
+									received: contentType || "none",
+								},
 							},
+							timestamp: new Date().toISOString(),
+							requestId: c.get("requestId"),
 						},
-						timestamp: new Date().toISOString(),
-						requestId: c.get("requestId"),
-					},
-					400,
-				);
+						400,
+					);
+				}
 			}
-		}
 
-		await next();
-	});
+			await next();
+		},
+	);
 
 // Validate idempotency key for POST requests
 export const validateIdempotencyKey = () =>
 	createMiddleware<{
 		Bindings: Env;
-		Variables: { idempotencyKey?: string };
+		Variables: { idempotencyKey?: string; requestId: string };
 	}>(async (c, next) => {
 		const method = c.req.method;
 
@@ -209,30 +217,32 @@ export const validateIdempotencyKey = () =>
 export const validateBodySize = (
 	maxSize: number = 1024 * 1024, // 1MB default
 ) =>
-	createMiddleware<{ Bindings: Env }>(async (c, next) => {
-		const contentLength = c.req.header("content-length");
+	createMiddleware<{ Bindings: Env; Variables: { requestId: string } }>(
+		async (c, next) => {
+			const contentLength = c.req.header("content-length");
 
-		if (contentLength) {
-			const size = parseInt(contentLength, 10);
+			if (contentLength) {
+				const size = parseInt(contentLength, 10);
 
-			if (size > maxSize) {
-				return c.json(
-					{
-						error: {
-							code: "PAYLOAD_TOO_LARGE",
-							message: "Request body too large",
-							details: {
-								maxSize,
-								receivedSize: size,
+				if (size > maxSize) {
+					return c.json(
+						{
+							error: {
+								code: "PAYLOAD_TOO_LARGE",
+								message: "Request body too large",
+								details: {
+									maxSize,
+									receivedSize: size,
+								},
 							},
+							timestamp: new Date().toISOString(),
+							requestId: c.get("requestId"),
 						},
-						timestamp: new Date().toISOString(),
-						requestId: c.get("requestId"),
-					},
-					413,
-				);
+						413,
+					);
+				}
 			}
-		}
 
-		await next();
-	});
+			await next();
+		},
+	);

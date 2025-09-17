@@ -54,7 +54,7 @@ export class EventsService {
 				.returning({ id: events.id });
 
 			return {
-				eventId: (insertedEvent as any[])?.[0]?.id || "unknown",
+				eventId: insertedEvent?.id ?? "unknown",
 				processed: true,
 			};
 		} catch (error) {
