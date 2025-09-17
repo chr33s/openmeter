@@ -21,7 +21,8 @@
 		{
 			"binding": "D1_DB",
 			"database_name": "openmeter-db",
-			"database_id": "<uid>"
+			"database_id": "<uid>",
+			"migrations_dir": "./migrations"
 		}
 	],
 	"kv_namespaces": [

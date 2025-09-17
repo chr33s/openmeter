@@ -55,7 +55,7 @@ describe("CORS", () => {
 		});
 
 		expect(response.status).toBe(200);
-		expect(response.headers.get("access-control-allow-origin")).toBe("*");
+		expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:3000");
 		expect(response.headers.get("access-control-allow-methods")).toContain(
 			"GET",
 		);
