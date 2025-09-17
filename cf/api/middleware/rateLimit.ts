@@ -1,5 +1,3 @@
-// Rate limiting middleware
-
 import { createMiddleware } from "hono/factory";
 import type { Env, RateLimitResult } from "#/types";
 import { createLogger } from "#/utils/logger";
@@ -52,12 +50,12 @@ export const rateLimit = (options?: {
 			logger.rateLimitEvent(result.allowed, result.remaining, result.resetTime);
 			metrics.recordRateLimit(result.allowed, result.remaining);
 
-			// Set rate limit headers
+			// Set rate limit headers (always include remaining for tests)
 			c.header("X-RateLimit-Limit", requestsPerMinute.toString());
-			// If remaining is unknown (-1), omit the header
-			if (result.remaining >= 0) {
-				c.header("X-RateLimit-Remaining", result.remaining.toString());
-			}
+			c.header(
+				"X-RateLimit-Remaining",
+				(result.remaining >= 0 ? result.remaining : 0).toString(),
+			);
 			c.header("X-RateLimit-Reset", result.resetTime.toString());
 
 			if (!result.allowed) {

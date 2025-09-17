@@ -1,5 +1,3 @@
-// Cache service using Cloudflare KV
-
 import type { Env, CacheEntry } from "#/types";
 
 export class CacheService {
@@ -107,7 +105,8 @@ export class CacheService {
 	async healthCheck(): Promise<boolean> {
 		try {
 			const testKey = "health-check";
-			await this.set(testKey, "test", 1);
+			// Use minimum TTL of 60 seconds to satisfy KV requirements
+			await this.set(testKey, "test", 60);
 			const result = await this.get(testKey);
 			await this.delete(testKey);
 			return result === "test";

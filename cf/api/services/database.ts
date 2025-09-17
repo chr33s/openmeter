@@ -1,5 +1,3 @@
-// Database service with Drizzle ORM for Cloudflare D1
-
 import { drizzle } from "drizzle-orm/d1";
 import { sql } from "drizzle-orm";
 import {
@@ -41,14 +39,11 @@ export const meters = sqliteTable(
 			.$defaultFn(() => new Date()),
 		deletedAt: integer("deleted_at", { mode: "timestamp" }),
 	},
-	(table) => ({
-		namespaceKeyUnique: unique().on(table.namespace, table.key),
-		namespaceKeyIdx: index("idx_meters_namespace_key").on(
-			table.namespace,
-			table.key,
-		),
-		eventTypeIdx: index("idx_meters_event_type").on(table.eventType),
-	}),
+	(table) => [
+		unique().on(table.namespace, table.key),
+		index("idx_meters_namespace_key").on(table.namespace, table.key),
+		index("idx_meters_event_type").on(table.eventType),
+	],
 );
 
 export const subjects = sqliteTable(
@@ -70,13 +65,10 @@ export const subjects = sqliteTable(
 			.$defaultFn(() => new Date()),
 		deletedAt: integer("deleted_at", { mode: "timestamp" }),
 	},
-	(table) => ({
-		namespaceKeyUnique: unique().on(table.namespace, table.key),
-		namespaceKeyIdx: index("idx_subjects_namespace_key").on(
-			table.namespace,
-			table.key,
-		),
-	}),
+	(table) => [
+		unique().on(table.namespace, table.key),
+		index("idx_subjects_namespace_key").on(table.namespace, table.key),
+	],
 );
 
 export const events = sqliteTable(
@@ -96,25 +88,19 @@ export const events = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
-	(table) => ({
-		meterSubjectIdx: index("idx_events_meter_subject").on(
-			table.meterId,
-			table.subjectId,
-		),
-		timestampIdx: index("idx_events_timestamp").on(table.timestamp),
-		meterTimestampIdx: index("idx_events_meter_timestamp").on(
-			table.meterId,
-			table.timestamp,
-		),
-		meterFk: foreignKey({
+	(table) => [
+		index("idx_events_meter_subject").on(table.meterId, table.subjectId),
+		index("idx_events_timestamp").on(table.timestamp),
+		index("idx_events_meter_timestamp").on(table.meterId, table.timestamp),
+		foreignKey({
 			columns: [table.meterId],
 			foreignColumns: [meters.id],
 		}),
-		subjectFk: foreignKey({
+		foreignKey({
 			columns: [table.subjectId],
 			foreignColumns: [subjects.id],
 		}),
-	}),
+	],
 );
 
 export const features = sqliteTable(
@@ -136,17 +122,14 @@ export const features = sqliteTable(
 			.$defaultFn(() => new Date()),
 		deletedAt: integer("deleted_at", { mode: "timestamp" }),
 	},
-	(table) => ({
-		namespaceKeyUnique: unique().on(table.namespace, table.key),
-		namespaceKeyIdx: index("idx_features_namespace_key").on(
-			table.namespace,
-			table.key,
-		),
-		meterFk: foreignKey({
+	(table) => [
+		unique().on(table.namespace, table.key),
+		index("idx_features_namespace_key").on(table.namespace, table.key),
+		foreignKey({
 			columns: [table.meterId],
 			foreignColumns: [meters.id],
 		}),
-	}),
+	],
 );
 
 export const usageAggregates = sqliteTable(
@@ -171,8 +154,8 @@ export const usageAggregates = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
-	(table) => ({
-		meterSubjectPeriodUnique: unique().on(
+	(table) => [
+		unique().on(
 			table.meterId,
 			table.subjectId,
 			table.periodStart,
@@ -180,23 +163,20 @@ export const usageAggregates = sqliteTable(
 			table.aggType,
 			table.groupBy,
 		),
-		meterSubjectIdx: index("idx_usage_aggregates_meter_subject").on(
+		index("idx_usage_aggregates_meter_subject").on(
 			table.meterId,
 			table.subjectId,
 		),
-		periodIdx: index("idx_usage_aggregates_period").on(
-			table.periodStart,
-			table.periodEnd,
-		),
-		meterFk: foreignKey({
+		index("idx_usage_aggregates_period").on(table.periodStart, table.periodEnd),
+		foreignKey({
 			columns: [table.meterId],
 			foreignColumns: [meters.id],
 		}),
-		subjectFk: foreignKey({
+		foreignKey({
 			columns: [table.subjectId],
 			foreignColumns: [subjects.id],
 		}),
-	}),
+	],
 );
 
 // Database service class

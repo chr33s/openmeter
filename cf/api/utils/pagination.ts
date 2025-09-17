@@ -1,5 +1,3 @@
-// Pagination utilities
-
 import type { PaginationParams, PaginationResponse } from "#/types";
 
 export interface PaginationOptions {

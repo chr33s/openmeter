@@ -1,5 +1,5 @@
 {
-	"name": "openmeter-cf-workers",
+	"name": "openmeter-cf",
 	"version": "1.0.0",
 	"description": "OpenMeter API implementation using Cloudflare Workers and Workers AI",
 	"main": "dist/index.js",
@@ -12,8 +12,7 @@
 		"db:migrate": "wrangler d1 migrations apply openmeter-db --remote",
 		"deploy": "wrangler publish",
 		"fix": "prettier --write . && oxlint --fix --fix-suggestions --import-plugin --node-plugin --promise-plugin --regex-plugin .",
-		"test": "vitest run",
-		"test:watch": "vitest",
+		"test": "vitest run --silent",
 		"typecheck": "tsc --noEmit"
 	},
 	"imports": {
@@ -29,7 +28,7 @@
 		"oxlint": "^1.16.0",
 		"prettier": "3.6.2",
 		"typescript": "5.9.2",
-		"vitest": "~3.0.0",
+		"vitest": "3.2.4",
 		"wrangler": "4.37.1"
 	},
 	"dependencies": {

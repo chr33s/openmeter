@@ -1,5 +1,3 @@
-// Metrics and monitoring utilities
-
 export interface MetricCounter {
 	name: string;
 	value: number;

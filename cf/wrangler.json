@@ -4,6 +4,9 @@
 	"main": "dist/index.js",
 	"compatibility_date": "2025-06-17",
 	"compatibility_flags": ["nodejs_compat"],
+	"dev": {
+		"port": 8080
+	},
 	"unsafe": {
 		"bindings": [
 			{

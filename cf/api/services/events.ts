@@ -1,5 +1,3 @@
-// Events service for processing usage events
-
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import type { DatabaseService } from "#/services/database";
 import { events, subjects, meters } from "#/services/database";

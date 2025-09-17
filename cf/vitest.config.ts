@@ -2,7 +2,8 @@ import { defineWorkersConfig } from "@cloudflare/vitest-pool-workers/config";
 
 export default defineWorkersConfig({
 	test: {
-		globals: true,
+		include: ["tests/*.test.ts"],
+		name: "worker",
 		poolOptions: {
 			workers: {
 				main: "./api/index.ts",
@@ -14,5 +15,6 @@ export default defineWorkersConfig({
 				wrangler: { configPath: "./wrangler.json" },
 			},
 		},
+		watch: false,
 	},
 });

@@ -1,5 +1,3 @@
-// Request validation middleware using Zod
-
 import { createMiddleware } from "hono/factory";
 import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";

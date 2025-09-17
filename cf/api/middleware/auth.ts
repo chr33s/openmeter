@@ -1,5 +1,3 @@
-// Authentication middleware
-
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
 import type { Env, AuthContext } from "#/types";

@@ -1,5 +1,3 @@
-// Structured logging utility
-
 import type { LogContext } from "#/types";
 
 export interface LogEntry {

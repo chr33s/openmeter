@@ -1,5 +1,3 @@
-// Core type definitions for OpenMeter Cloudflare Workers API
-
 import { z } from "zod";
 
 // Environment bindings interface

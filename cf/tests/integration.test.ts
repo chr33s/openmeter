@@ -1,12 +1,10 @@
-// Basic tests for the API endpoints
-
 import { describe, test, expect } from "vitest";
 import { SELF } from "cloudflare:test";
 
 describe("Health Check", () => {
 	test("GET /health returns health status", async () => {
 		const response = await SELF.fetch("http://localhost/health");
-		expect(response.status).toBe(503); // Expected to be degraded/down in test environment
+		expect(response.status).toBe(200);
 
 		const json = await response.json();
 		expect(json).toHaveProperty("status");
@@ -69,7 +67,7 @@ describe("Authentication", () => {
 		const response = await SELF.fetch("http://localhost/api/v1/meters");
 		expect(response.status).toBe(401);
 
-		const json = await response.json();
+		const json = await response.json<{ error: { code: string } }>();
 		expect(json.error.code).toBe("UNAUTHORIZED");
 	});
 
@@ -99,7 +97,7 @@ describe("Error Handling", () => {
 		const response = await SELF.fetch("http://localhost/non-existent");
 		expect(response.status).toBe(404);
 
-		const json = await response.json();
+		const json = await response.json<{ error: { code: string } }>();
 		expect(json.error.code).toBe("NOT_FOUND");
 		expect(json).toHaveProperty("requestId");
 		expect(json).toHaveProperty("timestamp");
@@ -119,7 +117,7 @@ describe("Request Validation", () => {
 
 		expect(response.status).toBe(400);
 
-		const json = await response.json();
+		const json = await response.json<{ error: { code: string } }>();
 		expect(json.error.code).toBe("INVALID_CONTENT_TYPE");
 	});
 });

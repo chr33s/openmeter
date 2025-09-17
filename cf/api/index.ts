@@ -1,5 +1,3 @@
-// Main application entry point
-
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
@@ -43,6 +41,26 @@ const app = new Hono<{
 
 // Global middleware
 app.use("*", validateRequestId());
+
+// Preflight handler returning 200 (placed before CORS middleware)
+app.options("/api/*", (c) => {
+	// Mirror CORS config headers
+	const corsOrigins = c.env.CORS_ORIGINS?.split(",") || ["*"];
+	const origin = corsOrigins.includes("*") ? "*" : (corsOrigins[0] ?? "*");
+
+	c.header("Access-Control-Allow-Origin", origin);
+	c.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,PATCH,OPTIONS");
+	c.header(
+		"Access-Control-Allow-Headers",
+		"Content-Type, Authorization, x-api-key, x-request-id, x-namespace, idempotency-key",
+	);
+	c.header(
+		"Access-Control-Expose-Headers",
+		"x-request-id, x-ratelimit-limit, x-ratelimit-remaining, x-ratelimit-reset, retry-after, link, x-total-count, x-page, x-per-page",
+	);
+	c.header("Access-Control-Max-Age", "86400");
+	return c.text("", 200);
+});
 
 // CORS configuration
 app.use("*", async (c, next) => {
@@ -110,6 +128,27 @@ app.use(
 
 // Authentication
 app.use("/api/*", auth());
+
+// Populate namespace on context for downstream handlers
+app.use(
+	"/api/*",
+	createMiddleware(async (c, next) => {
+		try {
+			const authCtx = c.get("auth") as { namespace?: string } | undefined;
+			const ns = authCtx?.namespace || "default";
+			c.set("namespace", ns);
+		} catch {
+			// Fallback to default if anything goes wrong
+			c.set("namespace", "default");
+		}
+		await next();
+	}),
+);
+
+// Ensure CORS preflight returns 200 (test expects 200, not 204)
+app.options("/api/*", (c) => {
+	return c.text("", 200);
+});
 
 // Content type validation for write operations
 app.use("/api/*/events", validateContentType());

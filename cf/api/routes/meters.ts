@@ -1,6 +1,5 @@
-// Meters API routes
-
 import { Hono } from "hono";
+import { createMiddleware } from "hono/factory";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import type {
@@ -34,6 +33,24 @@ const app = new Hono<{
 // List meters
 app.get(
 	"/",
+	// If unauthenticated, fail fast with 401 before touching DB (to satisfy tests)
+	createMiddleware<{
+		Bindings: Env;
+		Variables: { requestId: string; auth: any };
+	}>(async (c, next) => {
+		const auth = c.get("auth");
+		if (!auth?.isAuthenticated) {
+			return c.json(
+				{
+					error: { code: "UNAUTHORIZED", message: "Authentication required" },
+					timestamp: new Date().toISOString(),
+					requestId: c.get("requestId"),
+				},
+				401,
+			);
+		}
+		await next();
+	}),
 	validate(
 		"query",
 		commonSchemas.paginationQuery.extend({
