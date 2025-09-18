@@ -20,18 +20,20 @@ A customer dashboard example built with Vite + React + TypeScript and react-rout
 
 ## Prerequisites
 
-- Node.js 18+ 
+- Node.js 20+
 - npm or pnpm
 - OpenMeter API running locally or accessible endpoint
 
 ## Getting Started
 
 1. **Install dependencies:**
+
    ```bash
    npm install
    ```
 
 2. **Start the development server:**
+
    ```bash
    npm run dev
    ```
@@ -82,6 +84,7 @@ If running locally without the full OpenMeter API available, you can:
 
 1. **Proxy to existing OpenMeter instance:**
    Add to `vite.config.ts`:
+
    ```typescript
    server: {
      proxy: {
@@ -99,7 +102,7 @@ If running locally without the full OpenMeter API available, you can:
 ### Default Settings
 
 - **Meter ID**: `m1`
-- **Subject ID**: `customer-1`  
+- **Subject ID**: `customer-1`
 - **Window Size**: `DAY`
 - **Date Range**: Last 30 days
 
@@ -108,6 +111,7 @@ If running locally without the full OpenMeter API available, you can:
 ### Cloudflare Pages
 
 1. **Build the application:**
+
    ```bash
    npm run build
    ```

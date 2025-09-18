@@ -1,38 +1,37 @@
-import React from 'react'
-import { Routes, Route } from 'react-router-dom'
-import { Navigation, Header } from './components/navigation'
-import { Dashboard } from './routes/dashboard'
-import { Usage } from './routes/usage'
-import { Events } from './routes/events'
-import { Entitlements } from './routes/entitlements'
-import { Plans } from './routes/plans'
+import { Routes, Route } from "react-router";
+import { Navigation, Header } from "./components/navigation";
+import { Dashboard } from "./routes/dashboard";
+import { Usage } from "./routes/usage";
+import { Events } from "./routes/events";
+import { Entitlements } from "./routes/entitlements";
+import { Plans } from "./routes/plans";
 
 function App() {
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-100 to-green-100">
-      <div className="flex h-screen">
-        {/* Sidebar */}
-        <div className="w-64 flex-shrink-0">
-          <Navigation />
-        </div>
-        
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Header />
-          
-          <main className="flex-1 overflow-auto p-6">
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/usage" element={<Usage />} />
-              <Route path="/events" element={<Events />} />
-              <Route path="/entitlements" element={<Entitlements />} />
-              <Route path="/plans" element={<Plans />} />
-            </Routes>
-          </main>
-        </div>
-      </div>
-    </div>
-  )
+	return (
+		<div className="min-h-screen bg-gradient-to-br from-slate-100 to-green-100">
+			<div className="flex h-screen">
+				{/* Sidebar */}
+				<div className="w-64 flex-shrink-0">
+					<Navigation />
+				</div>
+
+				{/* Main Content */}
+				<div className="flex-1 flex flex-col overflow-hidden">
+					<Header />
+
+					<main className="flex-1 overflow-auto p-6">
+						<Routes>
+							<Route path="/" element={<Dashboard />} />
+							<Route path="/usage" element={<Usage />} />
+							<Route path="/events" element={<Events />} />
+							<Route path="/entitlements" element={<Entitlements />} />
+							<Route path="/plans" element={<Plans />} />
+						</Routes>
+					</main>
+				</div>
+			</div>
+		</div>
+	);
 }
 
-export default App
+export default App;
