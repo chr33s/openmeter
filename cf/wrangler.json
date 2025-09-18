@@ -1,7 +1,7 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"name": "openmeter-cf-api",
-	"main": "dist/index.js",
+	"main": "api/index.ts",
 	"compatibility_date": "2025-06-17",
 	"compatibility_flags": ["nodejs_compat"],
 	"dev": {
