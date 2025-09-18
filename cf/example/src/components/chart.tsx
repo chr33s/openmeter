@@ -12,7 +12,7 @@ import {
 	Legend,
 } from "chart.js";
 import "chartjs-adapter-luxon";
-import { Bar, Line } from "react-chartjs-2";
+import type { ChartData, ChartOptions, ChartType } from "chart.js";
 
 import type { MeterQueryRow } from "#/lib/api";
 
@@ -45,15 +45,12 @@ export function Chart({
 	loading = false,
 	className = "",
 }: ChartProps) {
-	const chartRef = useRef<any>(null);
-
-	useEffect(() => {
-		return () => {
-			if (chartRef.current) {
-				chartRef.current.destroy();
-			}
-		};
-	}, []);
+	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const chartRef = useRef<ChartJS<
+		"bar" | "line",
+		{ x: Date | number; y: number }[],
+		string
+	> | null>(null);
 
 	if (loading) {
 		return (
@@ -88,7 +85,11 @@ export function Chart({
 		);
 	}
 
-	const chartData = {
+	const chartData: ChartData<
+		"bar" | "line",
+		{ x: number | Date; y: number }[],
+		string
+	> = {
 		labels: data.map((row) => {
 			const date = new Date(row.windowStart);
 			return date.toLocaleDateString();
@@ -97,7 +98,7 @@ export function Chart({
 			{
 				label: "Usage",
 				data: data.map((row) => ({
-					x: row.windowStart,
+					x: new Date(row.windowStart),
 					y: row.value,
 				})),
 				backgroundColor: "rgba(59, 130, 246, 0.6)",
@@ -108,7 +109,7 @@ export function Chart({
 		],
 	};
 
-	const options = {
+	const options: ChartOptions<"bar" | "line"> = {
 		responsive: true,
 		maintainAspectRatio: false,
 		plugins: {
@@ -147,13 +148,63 @@ export function Chart({
 		},
 	};
 
-	const ChartComponent = type === "line" ? Line : Bar;
+	// Create chart on mount and destroy on unmount
+	useEffect(() => {
+		if (!canvasRef.current) return;
+
+		const ctx = canvasRef.current.getContext("2d");
+		if (!ctx) return;
+
+		chartRef.current = new ChartJS<
+			"bar" | "line",
+			{ x: number | Date; y: number }[],
+			string
+		>(ctx, {
+			type,
+			data: chartData,
+			options,
+		});
+
+		return () => {
+			chartRef.current?.destroy();
+			chartRef.current = null;
+		};
+		// We intentionally don't depend on chartData/options here; updates handled below
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
+
+	// Update the chart whenever type/data/options change
+	useEffect(() => {
+		const chart = chartRef.current;
+		if (!chart) return;
+
+		// If the chart type changes, we need to recreate the chart instance
+		if ((chart.config as any).type !== (type as ChartType)) {
+			const ctx = chart.canvas.getContext("2d");
+			chart.destroy();
+			if (!ctx) return;
+			chartRef.current = new ChartJS<
+				"bar" | "line",
+				{ x: number | Date; y: number }[],
+				string
+			>(ctx, {
+				type,
+				data: chartData,
+				options,
+			});
+			return;
+		}
+
+		chart.data = chartData as any;
+		chart.options = { ...(chart.options as any), ...(options as any) } as any;
+		chart.update();
+	}, [type, JSON.stringify(chartData), JSON.stringify(options)]);
 
 	return (
 		<div className={`bg-white rounded-lg shadow p-6 ${className}`}>
 			<h3 className="text-lg font-semibold text-gray-800 mb-4">{title}</h3>
 			<div style={{ height }}>
-				<ChartComponent ref={chartRef} data={chartData} options={options} />
+				<canvas ref={canvasRef} />
 			</div>
 		</div>
 	);
