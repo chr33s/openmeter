@@ -4,6 +4,7 @@ import { z } from "zod";
 export interface Env {
 	D1_DB: D1Database;
 	KV_CACHE: KVNamespace;
+	KV_API_KEYS: KVNamespace;
 	RATE_LIMITER?: {
 		limit: (options: { key: string }) => Promise<{ success: boolean }>;
 	};
@@ -194,6 +195,16 @@ export interface AuthContext {
 	apiKeyValid?: boolean;
 	jwtValid?: boolean;
 	userId?: string;
+}
+
+// API Key storage types
+export interface ApiKeyData {
+	role: "admin" | "read";
+	createdAt: string;
+	lastUsedAt?: string;
+	description?: string;
+	namespace?: string;
+	expiresAt?: string;
 }
 
 // Rate limiting types

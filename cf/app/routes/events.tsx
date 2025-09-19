@@ -1,6 +1,11 @@
 import { useState, useEffect } from "react";
 
-import { apiClient, Event, EventsQueryParams, PaginationResponse } from "#app/api";
+import {
+	apiClient,
+	Event,
+	EventsQueryParams,
+	PaginationResponse,
+} from "#app/api";
 import { Card } from "#app/components/card";
 import { Table, Pagination } from "#app/components/table";
 import {

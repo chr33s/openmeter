@@ -9,7 +9,7 @@ This project provides a complete OpenMeter API implementation that runs on Cloud
 - **High Performance**: Runs on Cloudflare's global edge network
 - **SQL Database**: Uses Cloudflare D1 with Drizzle ORM for data persistence
 - **Caching**: Implements KV-based caching for optimal performance
-- **Security**: API key authentication, JWT support, rate limiting, and CORS
+- **Security**: KV-backed API key authentication with SHA-256 hashing, JWT support, rate limiting, and CORS
 - **Documentation**: OpenAPI specification with interactive docs
 
 ## Features
@@ -28,7 +28,7 @@ This project provides a complete OpenMeter API implementation that runs on Cloud
 - **Database**: Cloudflare D1 SQL database with schema migrations
 - **Caching**: KV-based caching with configurable TTLs
 - **Rate Limiting**: Per-IP and per-route rate limiting
-- **Authentication**: API key and JWT-based authentication
+- **Authentication**: KV-backed API key and JWT-based authentication with role-based access control
 - **Logging**: Structured JSON logging with request tracing
 - **Error Handling**: Comprehensive error handling and validation
 
@@ -106,6 +106,200 @@ npm run deploy
 ## API Documentation
 
 Once deployed, visit `https://your-worker.your-subdomain.workers.dev/docs` for interactive API documentation.
+
+## API Key Management
+
+This implementation uses a secure KV-backed API key system for authentication.
+
+### Overview
+
+The API key system provides:
+
+- **Secure storage**: API keys are SHA-256 hashed, never stored in plaintext
+- **Role-based access**: Keys can have "admin" or "read" roles
+- **Expiration support**: Keys can be set to expire automatically
+- **Usage tracking**: Last-used timestamps are maintained
+- **Rate limiting**: Per-API-key rate limiting is supported
+
+### Setup
+
+#### 1. KV Namespace Configuration
+
+Ensure your `wrangler.json` includes the KV_API_KEYS binding:
+
+```json
+{
+	"kv_namespaces": [
+		{
+			"binding": "KV_CACHE",
+			"id": "<uid>",
+			"preview_id": "<uid>"
+		},
+		{
+			"binding": "KV_API_KEYS",
+			"id": "<uid>",
+			"preview_id": "<uid>"
+		}
+	]
+}
+```
+
+#### 2. Environment Variables
+
+Set the required environment variables:
+
+```bash
+# API key prefix (default: "om_")
+wrangler secret put API_KEY_PREFIX
+
+# Other required variables are already configured
+```
+
+### Creating API Keys
+
+#### Method 1: Using Admin Utilities
+
+```typescript
+import { createApiKey } from "#api/utils/api-key-admin";
+
+// Create an admin key
+const adminResult = await createApiKey(env, {
+	role: "admin",
+	description: "Full access admin key",
+	namespace: "default",
+});
+
+// Create a read-only key with expiration
+const expiryDate = new Date();
+expiryDate.setMonth(expiryDate.getMonth() + 6); // 6 months
+
+const readResult = await createApiKey(env, {
+	role: "read",
+	description: "Dashboard read access",
+	namespace: "analytics",
+	expiresAt: expiryDate,
+});
+
+console.log("Admin key:", adminResult.apiKey);
+console.log("Read key:", readResult.apiKey);
+```
+
+#### Method 2: Initial Setup Script
+
+```typescript
+import { setupInitialApiKeys } from "#api/utils/api-key-admin";
+
+// Sets up default admin and read keys
+await setupInitialApiKeys(env);
+```
+
+### Using API Keys
+
+#### HTTP Requests
+
+Include the API key in the `x-api-key` header:
+
+```bash
+curl -H "x-api-key: om_1234567890abcdef..." \
+     -H "Content-Type: application/json" \
+     https://your-worker.your-subdomain.workers.dev/api/v1/meters
+```
+
+#### In Code
+
+```typescript
+const response = await fetch("/api/v1/meters", {
+	headers: {
+		"x-api-key": "om_1234567890abcdef...",
+		"content-type": "application/json",
+	},
+});
+```
+
+### API Key Management
+
+#### List All Keys
+
+```typescript
+import { listApiKeys } from "#api/utils/api-key-admin";
+
+const keys = await listApiKeys(env);
+keys.forEach((key) => {
+	console.log(`Key: ${key.hash.substring(0, 8)}...`);
+	console.log(`Role: ${key.data.role}`);
+	console.log(`Created: ${key.data.createdAt}`);
+});
+```
+
+#### Validate a Key
+
+```typescript
+import { getApiKeyData } from "#api/utils/api-keys";
+
+const keyData = await getApiKeyData(env, apiKey);
+if (keyData) {
+	console.log("Valid key with role:", keyData.role);
+} else {
+	console.log("Invalid or expired key");
+}
+```
+
+#### Revoke a Key
+
+```typescript
+import { revokeApiKey } from "#api/utils/api-key-admin";
+
+const success = await revokeApiKey(env, apiKey);
+if (success) {
+	console.log("Key revoked successfully");
+}
+```
+
+### Security Features
+
+#### Key Storage
+
+- Keys are SHA-256 hashed before storage
+- Storage format: `ak:{sha256_hash}` → `{role, createdAt, ...}`
+- No plaintext keys are ever stored
+
+#### Key Format
+
+- Must start with configured prefix (default: `om_`)
+- Must be followed by hexadecimal characters
+- Minimum length validation is enforced
+
+#### Rate Limiting
+
+- Per-API-key limits prevent individual key abuse
+- Falls back to IP-based limiting for non-API requests
+- Configurable limits per endpoint
+
+### Authentication Flow
+
+1. **Request arrives** with `x-api-key` header
+2. **Prefix validation**: Check if key starts with `env.API_KEY_PREFIX`
+3. **Format validation**: Ensure key has correct format (prefix + hex)
+4. **KV lookup**: Hash the key and look up `ak:{hash}` in KV_API_KEYS
+5. **Expiration check**: Verify key hasn't expired
+6. **Role assignment**: Set `authContext.role` from KV metadata
+7. **Usage tracking**: Update `lastUsedAt` timestamp (non-blocking)
+
+### Error Codes
+
+- **401 Unauthorized**: Invalid, expired, or missing API key
+- **403 Forbidden**: Valid key but insufficient role permissions
+- **429 Rate Limited**: Too many requests for this API key
+
+### Best Practices
+
+1. **Use descriptive names** for API keys
+2. **Set expiration dates** for temporary access
+3. **Use read-only keys** when possible
+4. **Regularly audit** your API keys
+5. **Revoke unused keys** promptly
+6. **Monitor rate limit** headers in responses
+7. **Implement key rotation** for long-lived keys
 
 ## API Reference
 

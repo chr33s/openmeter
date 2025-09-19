@@ -1,4 +1,5 @@
 import { Link, useLocation } from "react-router";
+import { apiClient } from "#app/api";
 
 interface NavigationItem {
 	path: string;
@@ -49,6 +50,10 @@ export function Navigation() {
 }
 
 export function Header() {
+	const apiKey = apiClient.getApiKey();
+	const hasApiKey = !!apiKey;
+	const maskedApiKey = apiKey?.substring(0, 8) + "...";
+
 	return (
 		<header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
 			<div className="flex items-center justify-between">
@@ -60,7 +65,29 @@ export function Header() {
 						<span className="font-medium">Subject:</span> customer-1
 					</div>
 					<div>
-						<span className="font-medium">Environment:</span> Development
+						<span className="font-medium">Environment:</span> {__ENVIRONMENT__}
+					</div>
+					<div className="flex items-center space-x-2">
+						<span className="font-medium">API Auth:</span>
+						<div
+							className={`flex items-center space-x-1 px-2 py-1 rounded text-xs ${
+								hasApiKey
+									? "text-green-600 bg-green-50"
+									: "text-red-600 bg-red-50"
+							}`}
+							title={
+								hasApiKey
+									? "API key configured at build time"
+									: "No API key configured"
+							}
+						>
+							<span
+								className={`w-2 h-2 rounded-full ${
+									hasApiKey ? "bg-green-500" : "bg-red-500"
+								}`}
+							></span>
+							<span>{hasApiKey ? maskedApiKey : "No API Key"}</span>
+						</div>
 					</div>
 				</div>
 			</div>

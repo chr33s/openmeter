@@ -30,6 +30,11 @@
 			"binding": "KV_CACHE",
 			"id": "<uid>",
 			"preview_id": "<uid>"
+		},
+		{
+			"binding": "KV_API_KEYS",
+			"id": "<uid>",
+			"preview_id": "<uid>"
 		}
 	],
 	"vars": {

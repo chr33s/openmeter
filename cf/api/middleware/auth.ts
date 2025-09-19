@@ -1,8 +1,13 @@
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
 
-import type { Env, AuthContext } from "#api/types";
+import type { Env, AuthContext, ApiKeyData } from "#api/types";
 import { createLogger } from "#api/utils/logger";
+import {
+	getApiKeyData,
+	updateApiKeyLastUsed,
+	isValidApiKeyFormat,
+} from "#api/utils/api-keys";
 
 // Create authentication middleware
 export const auth = () =>
@@ -31,14 +36,18 @@ export const auth = () =>
 
 		// Try API key authentication first
 		if (apiKeyHeader) {
-			const isValid = await validateApiKey(apiKeyHeader, c.env);
-			if (isValid) {
+			const apiKeyData = await validateApiKey(apiKeyHeader, c.env);
+			if (apiKeyData) {
 				authContext.isAuthenticated = true;
 				authContext.authenticated = true;
 				authContext.apiKeyValid = true;
-				authContext.role = "admin"; // API keys get admin access
+				authContext.role = apiKeyData.role; // Use role from API key metadata
 				authContext.source = "api-key";
-				logger.authEvent("success", "api-key");
+
+				// Update last used timestamp (non-blocking)
+				updateApiKeyLastUsed(c.env, apiKeyHeader).catch(console.error);
+
+				logger.authEvent("success", "api-key", { role: apiKeyData.role });
 			} else {
 				logger.authEvent("failure", "api-key");
 			}
@@ -139,26 +148,35 @@ export const requireAdmin = () =>
 		await next();
 	});
 
-// Validate API key
-async function validateApiKey(apiKey: string, env: Env): Promise<boolean> {
+// Validate API key using KV-backed storage
+async function validateApiKey(
+	apiKey: string,
+	env: Env,
+): Promise<ApiKeyData | null> {
 	try {
-		// Check if API key has correct prefix
-		if (!env.API_KEY_PREFIX || !apiKey.startsWith(env.API_KEY_PREFIX)) {
-			return false;
+		// Early validation: check prefix format
+		if (
+			!env.API_KEY_PREFIX ||
+			!isValidApiKeyFormat(apiKey, env.API_KEY_PREFIX)
+		) {
+			return null;
 		}
 
-		// In a real implementation, you might want to:
-		// 1. Hash the API key and compare with stored hash
-		// 2. Check API key expiration
-		// 3. Rate limit per API key
-		// 4. Track API key usage
+		// Get API key data from KV storage
+		const apiKeyData = await getApiKeyData(env, apiKey);
+		if (!apiKeyData) {
+			return null;
+		}
 
-		// For this implementation, we'll use a simple secret-based validation
-		const expectedKey = await generateApiKey(env.API_KEY_SECRET);
-		return apiKey === expectedKey;
+		// Additional validation checks can be added here:
+		// - Rate limiting per API key
+		// - Namespace restrictions
+		// - Feature flags
+
+		return apiKeyData;
 	} catch (error) {
 		console.error("API key validation error:", error);
-		return false;
+		return null;
 	}
 }
 
@@ -186,18 +204,6 @@ async function validateJWT(token: string, env: Env): Promise<any> {
 		console.error("JWT validation error:", error);
 		return null;
 	}
-}
-
-// Generate API key (for development/testing)
-async function generateApiKey(secret: string): Promise<string> {
-	const encoder = new TextEncoder();
-	const data = encoder.encode(secret);
-	const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-	const hashArray = Array.from(new Uint8Array(hashBuffer));
-	const hashHex = hashArray
-		.map((b) => b.toString(16).padStart(2, "0"))
-		.join("");
-	return `om_${hashHex.substring(0, 32)}`;
 }
 
 // Extract namespace from request (for multitenancy)
