@@ -64,6 +64,45 @@ npm run lint
 
 # Type check
 npm run typecheck
+
+# Run integration tests
+npm run test:integration
+
+# Install Playwright browsers (required for E2E tests)
+npm run test:e2e:install
+
+# Run end-to-end tests
+npm run test:e2e
+
+# Run all tests
+npm run test
+```
+
+## Testing
+
+The application includes both integration and end-to-end tests:
+
+### Integration Tests
+Uses Vitest with @cloudflare/vitest-pool-workers to test application logic in a Workers environment:
+
+```bash
+npm run test:integration
+```
+
+### End-to-End Tests
+Uses Playwright to test the complete application flow:
+
+```bash
+# First install browsers (one time setup)
+npm run test:e2e:install
+
+# Run E2E tests
+npm run test:e2e
+```
+
+### Running All Tests
+```bash
+npm run test
 ```
 
 ## API Integration

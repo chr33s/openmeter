@@ -8,7 +8,11 @@
 		"build": "vite build",
 		"dev": "vite dev",
 		"preview": "vite preview",
-		"typecheck": "tsc --noEmit"
+		"typecheck": "tsc --noEmit",
+		"test:integration": "vitest -c tests/vitest.config.ts",
+		"test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
+		"test:e2e:install": "playwright install chromium",
+		"test": "npm run test:integration && npm run test:e2e"
 	},
 	"imports": {
 		"#app/*": [
@@ -25,13 +29,17 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.13.3",
+		"@cloudflare/vitest-pool-workers": "latest",
+		"@playwright/test": "latest",
 		"@tailwindcss/vite": "4.1.13",
+		"@types/node": "latest",
 		"@types/react": "19.1.13",
 		"@types/react-dom": "19.1.9",
 		"@vitejs/plugin-react": "5.0.3",
 		"tailwindcss": "4.1.13",
 		"typescript": "5.9.2",
 		"vite": "7.1.6",
+		"vitest": "latest",
 		"wrangler": "4.38.0"
 	},
 	"prettier": {
