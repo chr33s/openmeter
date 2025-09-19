@@ -1,4 +1,7 @@
 import { Link, useLocation } from "react-router";
+import { useState, useEffect } from "react";
+import { getAuthStatus } from "#app/init";
+import { ApiKeyManager } from "./api-key-manager";
 
 interface NavigationItem {
 	path: string;
@@ -49,21 +52,67 @@ export function Navigation() {
 }
 
 export function Header() {
+	const [authStatus, setAuthStatus] = useState(getAuthStatus());
+	const [showApiKeyManager, setShowApiKeyManager] = useState(false);
+
+	useEffect(() => {
+		// Update auth status periodically
+		const interval = setInterval(() => {
+			setAuthStatus(getAuthStatus());
+		}, 5000);
+
+		return () => clearInterval(interval);
+	}, []);
+
 	return (
-		<header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-			<div className="flex items-center justify-between">
-				<h2 className="text-lg font-semibold text-gray-800">
-					Customer Dashboard
-				</h2>
-				<div className="flex items-center space-x-4 text-sm text-gray-600">
-					<div>
-						<span className="font-medium">Subject:</span> customer-1
-					</div>
-					<div>
-						<span className="font-medium">Environment:</span> Development
+		<>
+			<header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+				<div className="flex items-center justify-between">
+					<h2 className="text-lg font-semibold text-gray-800">
+						Customer Dashboard
+					</h2>
+					<div className="flex items-center space-x-4 text-sm text-gray-600">
+						<div>
+							<span className="font-medium">Subject:</span> customer-1
+						</div>
+						<div>
+							<span className="font-medium">Environment:</span> Development
+						</div>
+						<div className="flex items-center space-x-2">
+							<span className="font-medium">API Auth:</span>
+							<button
+								onClick={() => setShowApiKeyManager(true)}
+								className={`flex items-center space-x-1 px-2 py-1 rounded text-xs transition-colors ${
+									authStatus.hasApiKey
+										? "text-green-600 hover:bg-green-50"
+										: "text-red-600 hover:bg-red-50 cursor-pointer"
+								}`}
+								title={
+									authStatus.hasApiKey
+										? "API key configured - click to manage"
+										: "No API key - click to configure"
+								}
+							>
+								<span
+									className={`w-2 h-2 rounded-full ${
+										authStatus.hasApiKey ? "bg-green-500" : "bg-red-500"
+									}`}
+								></span>
+								<span>
+									{authStatus.hasApiKey ? `${authStatus.apiKey}` : "No API Key"}
+								</span>
+							</button>
+						</div>
 					</div>
 				</div>
-			</div>
-		</header>
+			</header>
+
+			{/* API Key Manager Modal */}
+			{showApiKeyManager && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<ApiKeyManager onClose={() => setShowApiKeyManager(false)} />
+				</div>
+			)}
+		</>
 	);
 }

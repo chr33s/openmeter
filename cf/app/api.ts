@@ -1,3 +1,5 @@
+import { getConfigValue } from "./config";
+
 // API client for OpenMeter endpoints using fetch
 export interface MeterQueryParams {
 	meterId?: string;
@@ -118,10 +120,27 @@ class ApiError extends Error {
 
 class ApiClient {
 	private baseUrl: string;
+	private apiKey: string | null = null;
 	private abortController: AbortController | null = null;
 
 	constructor(baseUrl = "") {
 		this.baseUrl = baseUrl;
+		// Get API key from configuration
+		this.apiKey = getConfigValue("API_KEY") || null;
+	}
+
+	/**
+	 * Set API key manually if not available from environment
+	 */
+	setApiKey(apiKey: string): void {
+		this.apiKey = apiKey;
+	}
+
+	/**
+	 * Get current API key
+	 */
+	getApiKey(): string | null {
+		return this.apiKey;
 	}
 
 	private async request<T>(
@@ -133,14 +152,21 @@ class ApiClient {
 		// Create a new abort controller for this request
 		this.abortController = new AbortController();
 
+		// Build headers with authentication
+		const headers: Record<string, string> = {
+			"Content-Type": "application/json",
+			...options.headers,
+		};
+
+		// Add API key authentication if available
+		if (this.apiKey) {
+			headers["x-api-key"] = this.apiKey;
+		}
+
 		const response = await fetch(url, {
 			...options,
 			signal: this.abortController.signal,
-			headers: {
-				"Content-Type": "application/json",
-				// oxlint-disable @typescript-eslint/no-misused-spread
-				...options.headers,
-			},
+			headers,
 		});
 
 		if (!response.ok) {
@@ -150,6 +176,31 @@ class ApiClient {
 			} catch {
 				errorData = { message: response.statusText };
 			}
+
+			// Provide more specific error messages for authentication issues
+			if (response.status === 401) {
+				const message = this.apiKey
+					? "Invalid or expired API key"
+					: "Authentication required - API key not configured";
+				throw new ApiError(response.status, message, errorData);
+			}
+
+			if (response.status === 403) {
+				throw new ApiError(
+					response.status,
+					"Insufficient permissions for this operation",
+					errorData,
+				);
+			}
+
+			if (response.status === 429) {
+				throw new ApiError(
+					response.status,
+					"Rate limit exceeded - too many requests",
+					errorData,
+				);
+			}
+
 			throw new ApiError(
 				response.status,
 				errorData.message || "API request failed",
