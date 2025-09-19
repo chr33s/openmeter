@@ -1,5 +1,3 @@
-import { getConfigValue } from "./config";
-
 // API client for OpenMeter endpoints using fetch
 export interface MeterQueryParams {
 	meterId?: string;
@@ -120,26 +118,19 @@ class ApiError extends Error {
 
 class ApiClient {
 	private baseUrl: string;
-	private apiKey: string | null = null;
+	private apiKey: string;
 	private abortController: AbortController | null = null;
 
 	constructor(baseUrl = "") {
 		this.baseUrl = baseUrl;
-		// Get API key from configuration
-		this.apiKey = getConfigValue("API_KEY") || null;
-	}
-
-	/**
-	 * Set API key manually if not available from environment
-	 */
-	setApiKey(apiKey: string): void {
-		this.apiKey = apiKey;
+		// Use API key injected at build time
+		this.apiKey = __API_KEY__;
 	}
 
 	/**
 	 * Get current API key
 	 */
-	getApiKey(): string | null {
+	getApiKey(): string {
 		return this.apiKey;
 	}
 
@@ -158,10 +149,8 @@ class ApiClient {
 			...options.headers,
 		};
 
-		// Add API key authentication if available
-		if (this.apiKey) {
-			headers["x-api-key"] = this.apiKey;
-		}
+		// Add API key authentication
+		headers["x-api-key"] = this.apiKey;
 
 		const response = await fetch(url, {
 			...options,
@@ -179,9 +168,7 @@ class ApiClient {
 
 			// Provide more specific error messages for authentication issues
 			if (response.status === 401) {
-				const message = this.apiKey
-					? "Invalid or expired API key"
-					: "Authentication required - API key not configured";
+				const message = "Invalid or expired API key";
 				throw new ApiError(response.status, message, errorData);
 			}
 
