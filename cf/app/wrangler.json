@@ -6,11 +6,5 @@
 		"ENVIRONMENT": "development",
 		"API_KEY": "om_admin_development_key",
 		"API_BASE_URL": "/api"
-	},
-	"services": [
-		{
-			"binding": "API_SERVICE",
-			"service": "cloudmeter-api"
-		}
-	]
+	}
 }
