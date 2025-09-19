@@ -246,6 +246,35 @@ export const perIPRateLimit = (options?: {
 		},
 	});
 
+// Per-API-key rate limiting
+export const perApiKeyRateLimit = (options?: {
+	requestsPerMinute?: number;
+	burstLimit?: number;
+}) =>
+	rateLimit({
+		...options,
+		keyGenerator: (c) => {
+			const auth = c.get("auth");
+			const apiKeyHeader = c.req.header("x-api-key");
+
+			if (auth?.apiKeyValid && apiKeyHeader) {
+				// Use a hash of the API key for rate limiting (for privacy)
+				const keyPart = apiKeyHeader.substring(
+					c.env.API_KEY_PREFIX?.length || 0,
+					(c.env.API_KEY_PREFIX?.length || 0) + 8,
+				);
+				return `rate_limit:api_key:${keyPart}:${c.req.path}`;
+			}
+
+			// Fallback to IP-based rate limiting for non-API-key requests
+			const clientIP =
+				c.req.header("cf-connecting-ip") ||
+				c.req.header("x-forwarded-for") ||
+				"unknown";
+			return `rate_limit:ip:${clientIP}:${c.req.path}`;
+		},
+	});
+
 // Stricter rate limiting for expensive operations
 export const strictRateLimit = () =>
 	rateLimit({

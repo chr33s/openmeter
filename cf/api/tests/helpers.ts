@@ -1,3 +1,6 @@
+import type { Env, ApiKeyData } from "#api/types";
+import { storeApiKey } from "#api/utils/api-keys";
+
 export async function generateApiKey(secret: string) {
 	const enc = new TextEncoder();
 	const data = enc.encode(secret);
@@ -9,8 +12,33 @@ export async function generateApiKey(secret: string) {
 	return `om_${hashHex.substring(0, 32)}`;
 }
 
-export async function authHeaders(env: Env) {
-	const key = await generateApiKey(env.API_KEY_SECRET || "test-secret");
+/**
+ * Create a test API key and store it in KV
+ */
+export async function createTestApiKey(
+	env: Env,
+	role: "admin" | "read" = "admin",
+	description?: string,
+): Promise<string> {
+	const apiKey = await generateApiKey(
+		`test-secret-${Date.now()}-${Math.random()}`,
+	);
+
+	const apiKeyData: ApiKeyData = {
+		role,
+		createdAt: new Date().toISOString(),
+		description: description || `Test API key with ${role} role`,
+		namespace: "default",
+	};
+
+	// Store in KV
+	await storeApiKey(env, apiKey, apiKeyData);
+
+	return apiKey;
+}
+
+export async function authHeaders(env: Env, role: "admin" | "read" = "admin") {
+	const key = await createTestApiKey(env, role);
 	return { "x-api-key": key, "content-type": "application/json" } as Record<
 		string,
 		string
@@ -63,4 +91,15 @@ export async function readAuthHeaders(env: Env) {
 		Authorization: `Bearer ${jwt}`,
 		"content-type": "application/json",
 	} as Record<string, string>;
+}
+
+/**
+ * Create read-only API key headers for testing
+ */
+export async function readApiKeyHeaders(env: Env) {
+	const key = await createTestApiKey(env, "read", "Test read API key");
+	return { "x-api-key": key, "content-type": "application/json" } as Record<
+		string,
+		string
+	>;
 }
