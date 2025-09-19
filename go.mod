@@ -10,10 +10,10 @@ replace github.com/oklog/run => github.com/openmeterio/run v0.0.0-20250217124527
 require (
 	entgo.io/ent v0.14.5
 	github.com/AppsFlyer/go-sundheit v0.6.0
-	github.com/ClickHouse/clickhouse-go/v2 v2.40.1
+	github.com/ClickHouse/clickhouse-go/v2 v2.40.3
 	github.com/IBM/sarama v1.46.0
 	github.com/ThreeDotsLabs/watermill v1.5.1
-	github.com/ThreeDotsLabs/watermill-kafka/v3 v3.1.1
+	github.com/ThreeDotsLabs/watermill-kafka/v3 v3.1.2
 	github.com/XSAM/otelsql v0.40.0
 	github.com/alpacahq/alpacadecimal v0.0.8
 	github.com/avast/retry-go/v4 v4.6.1
@@ -36,10 +36,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/google/wire v0.7.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/huandu/go-sqlbuilder v1.36.1
-	github.com/invopop/gobl v0.300.0
+	github.com/huandu/go-sqlbuilder v1.37.0
+	github.com/invopop/gobl v0.300.1
 	github.com/jackc/pgx/v5 v5.7.6
-	github.com/jmattheis/goverter v1.9.1
+	github.com/jmattheis/goverter v1.9.2
 	github.com/lmittmann/tint v1.1.2
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/oapi-codegen/nethttp-middleware v1.1.2
@@ -59,7 +59,7 @@ require (
 	github.com/redis/go-redis/v9 v9.14.0
 	github.com/redpanda-data/benthos/v4 v4.55.0
 	github.com/redpanda-data/connect/public/bundle/free/v4 v4.61.0
-	github.com/rickb777/period v1.0.15
+	github.com/rickb777/period v1.0.16
 	github.com/sagikazarmark/mapstructurex v0.1.0
 	github.com/samber/lo v1.51.0
 	github.com/samber/mo v1.15.0
@@ -145,6 +145,7 @@ require (
 	github.com/googleapis/go-sql-spanner v1.16.0 // indirect
 	github.com/grafana/regexp v0.0.0-20240518133315-a468a5bfb3bc // indirect
 	github.com/hamba/avro/v2 v2.29.0 // indirect
+	github.com/huandu/go-clone v1.7.3 // indirect
 	github.com/invopop/validation v0.8.0 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
@@ -224,7 +225,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azqueue v1.0.1 // indirect
 	github.com/Azure/go-amqp v1.4.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.4.2 // indirect
-	github.com/ClickHouse/ch-go v0.67.0 // indirect
+	github.com/ClickHouse/ch-go v0.68.0 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace v1.29.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.53.0 // indirect
