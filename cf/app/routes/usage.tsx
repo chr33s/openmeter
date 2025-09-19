@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 
-import { apiClient, MeterQueryResult, MeterQueryParams } from "#/lib/api";
-import { Card } from "#/components/card";
-import { Chart } from "#/components/chart";
-import { Table } from "#/components/table";
-import { LoadingState, ErrorState } from "#/components/loading-error";
+import { apiClient, MeterQueryResult, MeterQueryParams } from "#app/api";
+import { Card } from "#app/components/card";
+import { Chart } from "#app/components/chart";
+import { Table } from "#app/components/table";
+import { LoadingState, ErrorState } from "#app/components/loading-error";
 
 export function Usage() {
 	const [usageData, setUsageData] = useState<MeterQueryResult | null>(null);
@@ -21,7 +21,7 @@ export function Usage() {
 	});
 
 	useEffect(() => {
-		loadUsageData();
+		void loadUsageData();
 	}, [filters]);
 
 	const loadUsageData = async () => {

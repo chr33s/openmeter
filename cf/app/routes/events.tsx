@@ -1,18 +1,13 @@
 import { useState, useEffect } from "react";
 
-import {
-	apiClient,
-	Event,
-	EventsQueryParams,
-	PaginationResponse,
-} from "#/lib/api";
-import { Card } from "#/components/card";
-import { Table, Pagination } from "#/components/table";
+import { apiClient, Event, EventsQueryParams, PaginationResponse } from "#app/api";
+import { Card } from "#app/components/card";
+import { Table, Pagination } from "#app/components/table";
 import {
 	LoadingState,
 	ErrorState,
 	EmptyState,
-} from "#/components/loading-error";
+} from "#app/components/loading-error";
 
 export function Events() {
 	const [events, setEvents] = useState<PaginationResponse<Event> | null>(null);
@@ -29,7 +24,7 @@ export function Events() {
 	});
 
 	useEffect(() => {
-		loadEvents();
+		void loadEvents();
 	}, [currentPage]);
 
 	const loadEvents = async () => {
@@ -66,7 +61,7 @@ export function Events() {
 
 	const applyFilters = () => {
 		setCurrentPage(1);
-		loadEvents();
+		void loadEvents();
 	};
 
 	const resetFilters = () => {

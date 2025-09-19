@@ -1,4 +1,4 @@
-import type { PaginationParams, PaginationResponse } from "#/types";
+import type { PaginationParams, PaginationResponse } from "#api/types";
 
 export interface PaginationOptions {
 	defaultLimit?: number;

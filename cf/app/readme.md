@@ -133,7 +133,7 @@ If running locally without the full OpenMeter API available, you can:
 
 ### API Client
 
-- **`lib/api.ts`** - Centralized API client using native fetch
+- **`api.ts`** - Centralized API client using native fetch
 - Type-safe interfaces for all API responses
 - Built-in error handling and loading states
 - AbortController support for request cancellation

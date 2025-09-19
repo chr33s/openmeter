@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 
-import { apiClient, Entitlement, PaginationResponse } from "#/lib/api";
-import { Card } from "#/components/card";
-import { Table, Pagination } from "#/components/table";
+import { apiClient, Entitlement, PaginationResponse } from "#app/api";
+import { Card } from "#app/components/card";
+import { Table, Pagination } from "#app/components/table";
 import {
 	LoadingState,
 	ErrorState,
 	EmptyState,
-} from "#/components/loading-error";
+} from "#app/components/loading-error";
 
 export function Entitlements() {
 	const [entitlements, setEntitlements] =
@@ -21,7 +21,7 @@ export function Entitlements() {
 	});
 
 	useEffect(() => {
-		loadEntitlements();
+		void loadEntitlements();
 	}, [currentPage]);
 
 	const loadEntitlements = async () => {
@@ -57,7 +57,7 @@ export function Entitlements() {
 
 	const applyFilters = () => {
 		setCurrentPage(1);
-		loadEntitlements();
+		void loadEntitlements();
 	};
 
 	const handlePageChange = (page: number) => {

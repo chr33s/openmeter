@@ -1,0 +1,6 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"ignorePatterns": ["worker-configuration.d.ts"],
+	"plugins": ["import", "node", "promise", "regex", "typescript", "unicorn"],
+	"typeAware": true
+}

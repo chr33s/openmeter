@@ -1,7 +1,7 @@
 {
-	"$schema": "./node_modules/wrangler/config-schema.json",
-	"name": "openmeter-cf-api",
-	"main": "api/index.ts",
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "cloudmeter-api",
+	"main": "./index.ts",
 	"compatibility_date": "2025-06-17",
 	"compatibility_flags": ["nodejs_compat"],
 	"dev": {
@@ -20,7 +20,7 @@
 	"d1_databases": [
 		{
 			"binding": "D1_DB",
-			"database_name": "openmeter-db",
+			"database_name": "cloudmeter-db",
 			"database_id": "<uid>",
 			"migrations_dir": "./migrations"
 		}
@@ -36,8 +36,8 @@
 		"ENVIRONMENT": "development",
 		"CORS_ORIGINS": "*",
 		"API_KEY_PREFIX": "om_",
-		"JWT_ISSUER": "openmeter",
-		"JWT_AUDIENCE": "openmeter-api",
+		"JWT_ISSUER": "cloudmeter",
+		"JWT_AUDIENCE": "cloudmeter-api",
 		"RATE_LIMIT_REQUESTS_PER_MINUTE": "100",
 		"RATE_LIMIT_BURST": "20",
 		"CACHE_TTL_SECONDS": "300",

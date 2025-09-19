@@ -1,41 +1,21 @@
 {
-	"name": "openmeter-cf",
+	"name": "cloudmeter",
 	"version": "1.0.0",
-	"description": "OpenMeter API implementation using Cloudflare Workers and Workers AI",
-	"main": "dist/index.js",
+	"description": "OpenMeter implementation using Cloudflare",
 	"scripts": {
-		"check": "prettier --check . && oxlint --import-plugin --node-plugin --promise-plugin --regex-plugin . && tsc --noEmit",
-		"dev": "wrangler dev",
-		"build": "tsc && wrangler publish --dry-run",
-		"db:generate": "drizzle-kit generate:sqlite",
-		"db:push": "drizzle-kit push:sqlite",
-		"db:migrate": "wrangler d1 migrations apply openmeter-db --remote",
-		"deploy": "wrangler publish",
-		"fix": "prettier --write . && oxlint --fix --fix-suggestions --import-plugin --node-plugin --promise-plugin --regex-plugin .",
-		"test": "vitest run --silent",
-		"typecheck": "tsc --noEmit"
+		"check": "prettier --check . && oxlint . && tsc --noEmit",
+		"fix": "prettier --write . && oxlint --fix --fix-suggestions ."
 	},
-	"imports": {
-		"#/*": "./api/*"
-	},
-	"author": "OpenMeter Team",
-	"license": "Apache-2.0",
+	"workspaces": [
+		"api",
+		"app"
+	],
 	"devDependencies": {
-		"@cloudflare/vitest-pool-workers": "^0.9.3",
-		"@prettier/plugin-oxc": "^0.0.4",
-		"@types/node": "24.5.2",
-		"drizzle-kit": "0.31.4",
-		"oxlint": "^1.16.0",
+		"@prettier/plugin-oxc": "0.0.4",
+		"oxlint": "1.16.0",
+		"oxlint-tsgolint": "0.2.0",
 		"prettier": "3.6.2",
-		"typescript": "5.9.2",
-		"vitest": "3.2.4",
-		"wrangler": "4.38.0"
-	},
-	"dependencies": {
-		"@hono/zod-validator": "0.7.3",
-		"drizzle-orm": "0.44.5",
-		"hono": "4.9.8",
-		"zod": "4.1.9"
+		"typescript": "5.9.2"
 	},
 	"prettier": {
 		"plugins": [

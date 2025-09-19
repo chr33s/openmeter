@@ -1,0 +1,12 @@
+{
+	"compilerOptions": {
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+		"types": ["@cloudflare/vitest-pool-workers", "node", "vite/client"]
+	},
+	"include": [
+		"./env.d.ts",
+		"./tests",
+		"./vitest.config.ts",
+		"./worker-configuration.d.ts"
+	]
+}

@@ -8,7 +8,7 @@ export default defineConfig({
 		tailwind(),
 		react(),
 		cloudflare({
-			auxiliaryWorkers: [{ configPath: "../wrangler.json" }],
+			auxiliaryWorkers: [{ configPath: "../api/wrangler.json" }],
 		}),
 	],
 	server: {

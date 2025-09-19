@@ -1,17 +1,19 @@
 {
-	"name": "openmeter-cf-customer-dashboard",
-	"private": true,
+	"name": "cloudmeter-app",
 	"version": "1.0.0",
+	"description": "OpenMeter app implementation using Cloudflare",
+	"main": "./index.html",
 	"type": "module",
 	"scripts": {
 		"build": "vite build",
-		"check": "prettier --check . && oxlint --import-plugin --react-perf-plugin --node-plugin --promise-plugin --regex-plugin . && tsc --noEmit",
 		"dev": "vite dev",
-		"fix": "prettier --write . && oxlint --fix --fix-suggestions --import-plugin --node-plugin --promise-plugin --regex-plugin .",
-		"preview": "vite preview"
+		"preview": "vite preview",
+		"typecheck": "tsc --noEmit"
 	},
 	"imports": {
-		"#/*": "./src/*"
+		"#app/*": [
+			"./*"
+		]
 	},
 	"dependencies": {
 		"chart.js": "4.5.0",
@@ -23,13 +25,10 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.13.3",
-		"@prettier/plugin-oxc": "0.0.4",
 		"@tailwindcss/vite": "4.1.13",
 		"@types/react": "19.1.13",
 		"@types/react-dom": "19.1.9",
 		"@vitejs/plugin-react": "5.0.3",
-		"oxlint": "1.16.0",
-		"prettier": "3.6.2",
 		"tailwindcss": "4.1.13",
 		"typescript": "5.9.2",
 		"vite": "7.1.6",

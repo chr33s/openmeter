@@ -1,7 +1,8 @@
-import { createMiddleware } from "hono/factory";
 import { zValidator } from "@hono/zod-validator";
+import { createMiddleware } from "hono/factory";
 import { z } from "zod";
-import type { Env } from "#/types";
+
+import type { Env } from "#api/types";
 
 // Generic validation middleware with better error formatting
 export const validate = <T extends z.ZodSchema>(

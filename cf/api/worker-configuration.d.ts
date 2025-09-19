@@ -511,7 +511,6 @@ declare abstract class Navigator {
 			| (ArrayBuffer | ArrayBufferView)
 			| Blob
 			| FormData
-			| URLSearchParams
 			| URLSearchParams,
 	): boolean;
 	readonly userAgent: string;

@@ -138,6 +138,7 @@ class ApiClient {
 			signal: this.abortController.signal,
 			headers: {
 				"Content-Type": "application/json",
+				// oxlint-disable @typescript-eslint/no-misused-spread
 				...options.headers,
 			},
 		});

@@ -1,8 +1,0 @@
-{
-	"extends": "../tsconfig.json",
-	"include": ["./**/*", "../env.d.ts", "../worker-configuration.d.ts"],
-	"compilerOptions": {
-		// Allow tests outside api/ to be part of the program
-		"rootDir": ".."
-	}
-}

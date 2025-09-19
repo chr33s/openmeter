@@ -14,7 +14,7 @@ import {
 import "chartjs-adapter-luxon";
 import type { ChartData, ChartOptions, ChartType } from "chart.js";
 
-import type { MeterQueryRow } from "#/lib/api";
+import type { MeterQueryRow } from "#app/api";
 
 ChartJS.register(
 	CategoryScale,

@@ -1,4 +1,4 @@
-import type { LogContext } from "#/types";
+import type { LogContext } from "#api/types";
 
 export interface LogEntry {
 	level: "debug" | "info" | "warn" | "error";

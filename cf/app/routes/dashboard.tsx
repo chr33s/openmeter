@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
-import { apiClient, MeterQueryResult, UsageReport } from "#/lib/api";
-import { Card, MetricCard } from "#/components/card";
-import { Chart } from "#/components/chart";
-import { LoadingState, ErrorState } from "#/components/loading-error";
+import { apiClient, MeterQueryResult, UsageReport } from "#app/api";
+import { Card, MetricCard } from "#app/components/card";
+import { Chart } from "#app/components/chart";
+import { LoadingState, ErrorState } from "#app/components/loading-error";
 
 export function Dashboard() {
 	const [usageData, setUsageData] = useState<MeterQueryResult | null>(null);
@@ -11,7 +11,7 @@ export function Dashboard() {
 	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
-		loadDashboardData();
+		void loadDashboardData();
 	}, []);
 
 	const loadDashboardData = async () => {

@@ -1,0 +1,9 @@
+{
+	"$schema": "../node_modules/wrangler/config-schema.json",
+	"name": "cloudmeter-app",
+	"compatibility_date": "2025-06-17",
+	"vars": {
+		"ENVIRONMENT": "development",
+		"API_KEY": ""
+	}
+}

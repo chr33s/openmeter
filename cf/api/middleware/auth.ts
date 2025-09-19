@@ -1,7 +1,8 @@
 import { createMiddleware } from "hono/factory";
 import { verify } from "hono/jwt";
-import type { Env, AuthContext } from "#/types";
-import { createLogger } from "#/utils/logger";
+
+import type { Env, AuthContext } from "#api/types";
+import { createLogger } from "#api/utils/logger";
 
 // Create authentication middleware
 export const auth = () =>
@@ -162,7 +163,7 @@ async function validateApiKey(apiKey: string, env: Env): Promise<boolean> {
 }
 
 // Validate JWT token
-async function validateJWT(token: string, env: Env): Promise<any | null> {
+async function validateJWT(token: string, env: Env): Promise<any> {
 	try {
 		const payload = await verify(token, env.JWT_SECRET);
 

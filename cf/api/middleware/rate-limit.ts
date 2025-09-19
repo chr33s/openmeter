@@ -1,7 +1,8 @@
 import { createMiddleware } from "hono/factory";
-import type { Env, RateLimitResult } from "#/types";
-import { createLogger } from "#/utils/logger";
-import { metrics } from "#/utils/metrics";
+
+import type { Env, RateLimitResult } from "#api/types";
+import { createLogger } from "#api/utils/logger";
+import { metrics } from "#api/utils/metrics";
 
 // Rate limiting using KV as fallback to Workers Rate Limiting
 export const rateLimit = (options?: {

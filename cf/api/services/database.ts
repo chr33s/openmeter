@@ -1,4 +1,3 @@
-import { drizzle } from "drizzle-orm/d1";
 import { sql } from "drizzle-orm";
 import {
 	sqliteTable,
@@ -9,7 +8,9 @@ import {
 	index,
 	foreignKey,
 } from "drizzle-orm/sqlite-core";
-import type { Env } from "#/types";
+import { drizzle } from "drizzle-orm/d1";
+
+import type { Env } from "#api/types";
 
 // Schema definitions using Drizzle ORM
 export const meters = sqliteTable(

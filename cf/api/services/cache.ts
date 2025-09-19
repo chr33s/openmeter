@@ -1,4 +1,4 @@
-import type { Env, CacheEntry } from "#/types";
+import type { Env, CacheEntry } from "#api/types";
 
 export class CacheService {
 	private kv: KVNamespace;

@@ -1,13 +1,13 @@
 import { useState, useEffect } from "react";
 
-import { apiClient, Plan, PaginationResponse } from "#/lib/api";
-import { Card } from "#/components/card";
-import { Table, Pagination } from "#/components/table";
+import { apiClient, Plan, PaginationResponse } from "#app/api";
+import { Card } from "#app/components/card";
+import { Table, Pagination } from "#app/components/table";
 import {
 	LoadingState,
 	ErrorState,
 	EmptyState,
-} from "#/components/loading-error";
+} from "#app/components/loading-error";
 
 export function Plans() {
 	const [plans, setPlans] = useState<PaginationResponse<Plan> | null>(null);
@@ -17,7 +17,7 @@ export function Plans() {
 	const [pageSize, setPageSize] = useState(25);
 
 	useEffect(() => {
-		loadPlans();
+		void loadPlans();
 	}, [currentPage, pageSize]);
 
 	const loadPlans = async () => {

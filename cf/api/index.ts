@@ -4,27 +4,24 @@ import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import { createMiddleware } from "hono/factory";
 
-import type { Env } from "#/types";
-import { withRequestLogging } from "#/utils/logger";
-import { metrics } from "#/utils/metrics";
-import { createDatabaseService } from "#/services/database";
-import { createCacheService } from "#/services/cache";
-import { createEventsService } from "#/services/events";
-
-import { auth } from "#/middleware/auth";
-import { rateLimit } from "#/middleware/rateLimit";
+import type { Env } from "./types";
+import { withRequestLogging } from "./utils/logger";
+import { metrics } from "./utils/metrics";
+import { createDatabaseService } from "./services/database";
+import { createCacheService } from "./services/cache";
+import { createEventsService } from "./services/events";
+import { auth } from "./middleware/auth";
+import { rateLimit } from "./middleware/rate-limit";
 import {
 	validateRequestId,
 	validateContentType,
 	validateIdempotencyKey,
-} from "#/middleware/validation";
-
-// Import route handlers
-import metersRouter from "#/routes/meters";
-import eventsRouter from "#/routes/events";
-import subjectsRouter from "#/routes/subjects";
-import featuresRouter from "#/routes/features";
-import usageRouter from "#/routes/usage";
+} from "./middleware/validation";
+import metersRouter from "./routes/meters";
+import eventsRouter from "./routes/events";
+import subjectsRouter from "./routes/subjects";
+import featuresRouter from "./routes/features";
+import usageRouter from "./routes/usage";
 
 // Create Hono app with proper typing
 const app = new Hono<{

@@ -1,26 +1,27 @@
 import { Hono } from "hono";
 import { z } from "zod";
+
 import type {
 	Env,
 	IngestEventRequest,
 	BatchIngestEventRequest,
 	Event,
 	PaginationResponse,
-} from "#/types";
-import { IngestEventSchema, BatchIngestEventSchema } from "#/types";
-import { requireAuth } from "#/middleware/auth";
+} from "#api/types";
+import { IngestEventSchema, BatchIngestEventSchema } from "#api/types";
+import { requireAuth } from "#api/middleware/auth";
 import {
 	validate,
 	commonSchemas,
 	validateIdempotencyKey,
-} from "#/middleware/validation";
-import { strictRateLimit, perUserRateLimit } from "#/middleware/rateLimit";
-import { withRequestLogging } from "#/utils/logger";
-import { pagination, addPaginationHeaders } from "#/utils/pagination";
-import { metrics } from "#/utils/metrics";
-import { CacheService } from "#/services/cache";
-import { DatabaseService } from "#/services/database";
-import { EventsService } from "#/services/events";
+} from "#api/middleware/validation";
+import { strictRateLimit, perUserRateLimit } from "#api/middleware/rate-limit";
+import { withRequestLogging } from "#api/utils/logger";
+import { pagination, addPaginationHeaders } from "#api/utils/pagination";
+import { metrics } from "#api/utils/metrics";
+import { CacheService } from "#api/services/cache";
+import { DatabaseService } from "#api/services/database";
+import { EventsService } from "#api/services/events";
 
 const app = new Hono<{
 	Bindings: Env;
@@ -330,7 +331,7 @@ async function checkIdempotency(
 	key: string,
 	namespace: string,
 	operation: string,
-): Promise<any | null> {
+): Promise<any> {
 	const cacheKey = CacheService.createKey(
 		"idempotency",
 		namespace,
