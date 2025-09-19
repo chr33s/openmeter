@@ -11,7 +11,7 @@ import {
 	listApiKeys,
 	revokeApiKey,
 	setupInitialApiKeys,
-} from "#api/utils/api-key-admin";
+} from "#api/utils/api-keys";
 import { getApiKeyData } from "#api/utils/api-keys";
 
 /**

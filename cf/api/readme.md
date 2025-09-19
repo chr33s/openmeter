@@ -160,7 +160,7 @@ wrangler secret put API_KEY_PREFIX
 #### Method 1: Using Admin Utilities
 
 ```typescript
-import { createApiKey } from "#api/utils/api-key-admin";
+import { createApiKey } from "#api/utils/api-keys";
 
 // Create an admin key
 const adminResult = await createApiKey(env, {
@@ -187,7 +187,7 @@ console.log("Read key:", readResult.apiKey);
 #### Method 2: Initial Setup Script
 
 ```typescript
-import { setupInitialApiKeys } from "#api/utils/api-key-admin";
+import { setupInitialApiKeys } from "#api/utils/api-keys";
 
 // Sets up default admin and read keys
 await setupInitialApiKeys(env);
@@ -221,7 +221,7 @@ const response = await fetch("/api/v1/meters", {
 #### List All Keys
 
 ```typescript
-import { listApiKeys } from "#api/utils/api-key-admin";
+import { listApiKeys } from "#api/utils/api-keys";
 
 const keys = await listApiKeys(env);
 keys.forEach((key) => {
@@ -247,7 +247,7 @@ if (keyData) {
 #### Revoke a Key
 
 ```typescript
-import { revokeApiKey } from "#api/utils/api-key-admin";
+import { revokeApiKey } from "#api/utils/api-keys";
 
 const success = await revokeApiKey(env, apiKey);
 if (success) {
