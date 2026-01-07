@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/openmeterio/openmeter/api"
+	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/entitlement"
 	"github.com/openmeterio/openmeter/openmeter/entitlement/snapshot"
 	eventmodels "github.com/openmeterio/openmeter/openmeter/event/models"
@@ -64,12 +65,23 @@ func NewBalanceSnapshotEvent(in BalanceSnapshotEventInput) snapshot.SnapshotEven
 				ID:              TestEntitlementID,
 				FeatureID:       in.Feature.ID,
 				FeatureKey:      in.Feature.Key,
-				SubjectKey:      TestSubjectKey,
 				EntitlementType: entitlement.EntitlementTypeMetered,
 
 				UsagePeriod:               &TestEntitlementUsagePeriod,
 				OriginalUsagePeriodAnchor: lo.ToPtr(TestEntitlementUsagePeriod.GetOriginalValueAsUsagePeriodInput().GetValue().Anchor),
 				CurrentUsagePeriod:        &TestEntitlementCurrentUsagePeriod,
+
+				Customer: &customer.Customer{
+					ManagedResource: models.ManagedResource{
+						ID: TestCustomerID,
+						NamespacedModel: models.NamespacedModel{
+							Namespace: in.Namespace,
+						},
+					},
+					UsageAttribution: &customer.CustomerUsageAttribution{
+						SubjectKeys: []string{TestSubjectKey},
+					},
+				},
 			},
 			MeasureUsageFrom: &TestEntitlementCurrentUsagePeriod.From,
 			IsSoftLimit:      convert.ToPointer(true),
@@ -136,7 +148,7 @@ func (s *BalanceNotificaiontHandlerTestSuite) setupNamespace(ctx context.Context
 		Key:                 TestFeatureKey,
 		Namespace:           s.namespace,
 		MeterSlug:           convert.ToPointer(meter.Key),
-		MeterGroupByFilters: meter.GroupBy,
+		MeterGroupByFilters: feature.ConvertMapStringToMeterGroupByFilters(meter.GroupBy),
 	})
 	require.NoError(t, err, "Creating feature must not return error")
 
@@ -438,7 +450,7 @@ func (s *BalanceNotificaiontHandlerTestSuite) TestFeatureFiltering(ctx context.C
 		Key:                 TestFeature2Key,
 		Namespace:           s.namespace,
 		MeterSlug:           convert.ToPointer(meter.Key),
-		MeterGroupByFilters: meter.GroupBy,
+		MeterGroupByFilters: feature.ConvertMapStringToMeterGroupByFilters(meter.GroupBy),
 	})
 	require.NoError(t, err, "Creating feature must not return error")
 
@@ -447,7 +459,7 @@ func (s *BalanceNotificaiontHandlerTestSuite) TestFeatureFiltering(ctx context.C
 		Key:                 TestFeature3Key,
 		Namespace:           s.namespace,
 		MeterSlug:           convert.ToPointer(meter.Key),
-		MeterGroupByFilters: meter.GroupBy,
+		MeterGroupByFilters: feature.ConvertMapStringToMeterGroupByFilters(meter.GroupBy),
 	})
 	require.NoError(t, err, "Creating feature must not return error")
 	require.NotNil(t, feature3, "Feature must not be nil")

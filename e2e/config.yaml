@@ -17,6 +17,8 @@ ingest:
 aggregation:
   clickhouse:
     address: clickhouse:9000
+    retry:
+      enabled: true
 
 sink:
   minCommitCount: 500
@@ -97,3 +99,7 @@ meters:
     eventType: plan_meter
     aggregation: SUM
     valueProperty: $.value
+  - slug: multi_subject_meter
+    description: Meter for testing multi subject
+    eventType: multi_subject
+    aggregation: COUNT

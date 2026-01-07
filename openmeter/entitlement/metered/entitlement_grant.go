@@ -76,10 +76,11 @@ func (e *connector) CreateGrant(ctx context.Context, namespace string, customerI
 		ResetMaxRollover: inputGrant.ResetMaxRollover,
 		ResetMinRollover: inputGrant.ResetMinRollover,
 		Recurrence:       inputGrant.Recurrence,
+		Annotations:      inputGrant.Annotations,
 		Metadata:         inputGrant.Metadata,
 	})
 	if err != nil {
-		if _, ok := err.(grant.OwnerNotFoundError); ok {
+		if _, ok := lo.ErrorsAs[*grant.OwnerNotFoundError](err); ok {
 			return EntitlementGrant{}, &entitlement.NotFoundError{EntitlementID: models.NamespacedID{Namespace: namespace, ID: ent.ID}}
 		}
 
@@ -159,6 +160,4 @@ func GrantFromCreditGrant(grant grant.Grant, now time.Time) (*EntitlementGrant, 
 	return g, nil
 }
 
-type CreateEntitlementGrantInputs struct {
-	credit.CreateGrantInput
-}
+type CreateEntitlementGrantInputs = entitlement.CreateEntitlementGrantInputs

@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/openmeterio/openmeter/api"
 	"github.com/openmeterio/openmeter/openmeter/credit"
 	"github.com/openmeterio/openmeter/openmeter/credit/grant"
@@ -101,7 +103,7 @@ func (h *meteredEntitlementHandler) CreateGrant() CreateGrantHandler {
 					Amount:      apiGrant.Amount,
 					Priority:    defaultx.WithDefault(apiGrant.Priority, 0),
 					EffectiveAt: apiGrant.EffectiveAt,
-					Expiration: grant.ExpirationPeriod{
+					Expiration: &grant.ExpirationPeriod{
 						Count:    apiGrant.Expiration.Count,
 						Duration: grant.ExpirationPeriodDuration(apiGrant.Expiration.Duration),
 					},
@@ -111,7 +113,7 @@ func (h *meteredEntitlementHandler) CreateGrant() CreateGrantHandler {
 			}
 
 			if apiGrant.Metadata != nil {
-				req.GrantInput.Metadata = *apiGrant.Metadata
+				req.GrantInput.Metadata = lo.FromPtr(apiGrant.Metadata)
 			}
 
 			if apiGrant.Recurrence != nil {
@@ -393,8 +395,8 @@ func (h *meteredEntitlementHandler) resolveCustomerFromSubject(ctx context.Conte
 	}
 
 	cust, err := h.customerService.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
-		Namespace:  namespace,
-		SubjectKey: subj.Key,
+		Namespace: namespace,
+		Key:       subj.Key,
 	})
 	if err != nil {
 		return nil, err
@@ -405,20 +407,30 @@ func (h *meteredEntitlementHandler) resolveCustomerFromSubject(ctx context.Conte
 
 func MapEntitlementGrantToAPI(grant *meteredentitlement.EntitlementGrant) api.EntitlementGrant {
 	apiGrant := api.EntitlementGrant{
-		Amount:      grant.Amount,
-		CreatedAt:   grant.CreatedAt,
-		EffectiveAt: grant.EffectiveAt,
-		Expiration: api.ExpirationPeriod{
-			Count:    grant.Expiration.Count,
-			Duration: api.ExpirationDuration(grant.Expiration.Duration),
-		},
-		Id:                grant.ID,
-		Metadata:          &grant.Metadata,
-		Priority:          convert.ToPointer(grant.Priority),
-		UpdatedAt:         grant.UpdatedAt,
-		DeletedAt:         grant.DeletedAt,
-		EntitlementId:     grant.EntitlementID,
-		ExpiresAt:         &grant.ExpiresAt,
+		Amount:        grant.Amount,
+		CreatedAt:     grant.CreatedAt,
+		EffectiveAt:   grant.EffectiveAt,
+		Id:            grant.ID,
+		Metadata:      convert.MapToPointer(grant.Metadata),
+		Annotations:   (*api.Annotations)(convert.MapToPointer(grant.Annotations)),
+		Priority:      convert.ToPointer(grant.Priority),
+		UpdatedAt:     grant.UpdatedAt,
+		DeletedAt:     grant.DeletedAt,
+		EntitlementId: grant.EntitlementID,
+		Expiration: func() api.ExpirationPeriod {
+			if grant.Expiration == nil {
+				return api.ExpirationPeriod{
+					Count:    100,
+					Duration: api.ExpirationDuration("YEAR"),
+				}
+			}
+
+			return api.ExpirationPeriod{
+				Count:    grant.Expiration.Count,
+				Duration: api.ExpirationDuration(grant.Expiration.Duration),
+			}
+		}(),
+		ExpiresAt:         lo.ToPtr(lo.FromPtrOr(grant.ExpiresAt, clock.Now().AddDate(100, 0, 0))), // V1 API expects all grants to have an expiresAt so we'll artificially set a very far future date. This is a hack that our users were already doing to get this behavior and we will sunset it later...
 		MaxRolloverAmount: &grant.MaxRolloverAmount,
 		MinRolloverAmount: &grant.MinRolloverAmount,
 		NextRecurrence:    grant.NextRecurrence,

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
 
@@ -40,16 +41,8 @@ const (
 
 	metricNameRecalculationTime               = "balance_worker.entitlement_recalculation_time_ms"
 	metricNameRecalculationJobCalculationTime = "balance_worker.entitlement_recalculation_job_calculation_time_ms"
-	metricNameHighWatermarkCacheStats         = "balance_worker.high_watermark_cache_stats"
 
 	metricAttributeKeyEntitltementType = "entitlement_type"
-)
-
-var (
-	metricAttributeHighWatermarkCacheHit        = attribute.String("op", "hit")
-	metricAttributeHighWatermarkCacheHitDeleted = attribute.String("op", "hit_deleted")
-	metricAttributeHighWatermarkCacheMiss       = attribute.String("op", "miss")
-	metricAttributeHighWatermarkCacheStale      = attribute.String("op", "stale")
 )
 
 type RecalculatorOptions struct {
@@ -60,8 +53,9 @@ type RecalculatorOptions struct {
 	MetricMeter metric.Meter
 
 	NotificationService notification.Service
-	FilterStateStorage  FilterStateStorage
 	Logger              *slog.Logger
+
+	HighWatermarkCacheSize int
 }
 
 func (o RecalculatorOptions) Validate() error {
@@ -99,8 +93,8 @@ func (o RecalculatorOptions) Validate() error {
 		errs = append(errs, errors.New("missing subject service"))
 	}
 
-	if err := o.FilterStateStorage.Validate(); err != nil {
-		errs = append(errs, fmt.Errorf("filter state storage: %w", err))
+	if o.HighWatermarkCacheSize <= 0 {
+		errs = append(errs, fmt.Errorf("high watermark cache size must be positive"))
 	}
 
 	if o.Logger == nil {
@@ -144,10 +138,10 @@ func NewRecalculator(opts RecalculatorOptions) (*Recalculator, error) {
 	}
 
 	entitlementFilters, err := NewEntitlementFilters(EntitlementFiltersConfig{
-		NotificationService: opts.NotificationService,
-		MetricMeter:         opts.MetricMeter,
-		StateStorage:        opts.FilterStateStorage,
-		Logger:              opts.Logger,
+		NotificationService:    opts.NotificationService,
+		MetricMeter:            opts.MetricMeter,
+		HighWatermarkCacheSize: opts.HighWatermarkCacheSize,
+		Logger:                 opts.Logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create entitlement filters: %w", err)
@@ -179,16 +173,25 @@ func (r *Recalculator) GetEntitlementFilters() *EntitlementFilters {
 }
 
 func (r *Recalculator) Recalculate(ctx context.Context, ns string, recalculationStartedAt time.Time) error {
+	affectedEntitlements, err := r.ListInScopeEntitlements(ctx, ns)
+	if err != nil {
+		return fmt.Errorf("failed to list in scope entitlements: %w", err)
+	}
+
+	return r.ProcessEntitlements(ctx, affectedEntitlements, recalculationStartedAt)
+}
+
+func (r *Recalculator) ListInScopeEntitlements(ctx context.Context, ns string) ([]entitlement.Entitlement, error) {
 	if ns == "" {
-		return errors.New("namespace is required")
+		return nil, errors.New("namespace is required")
 	}
 
 	inScope, err := r.entitlementFilters.IsNamespaceInScope(ctx, ns)
 	if err != nil {
-		return fmt.Errorf("failed to check if namespace is in scope: %w", err)
+		return nil, fmt.Errorf("failed to check if namespace is in scope: %w", err)
 	}
 	if !inScope {
-		return nil
+		return nil, nil
 	}
 
 	// Note: this is to support namesapces with more than 64k entitlements, as the subqueries
@@ -211,7 +214,7 @@ func (r *Recalculator) Recalculate(ctx context.Context, ns string, recalculation
 				},
 			})
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if len(affectedEntitlementsPage.Items) == 0 {
@@ -227,10 +230,10 @@ func (r *Recalculator) Recalculate(ctx context.Context, ns string, recalculation
 		page++
 	}
 
-	return r.processEntitlements(ctx, affectedEntitlements, recalculationStartedAt)
+	return affectedEntitlements, nil
 }
 
-func (r *Recalculator) processEntitlements(ctx context.Context, entitlements []entitlement.Entitlement, recalculationStartedAt time.Time) error {
+func (r *Recalculator) ProcessEntitlements(ctx context.Context, entitlements []entitlement.Entitlement, recalculationStartedAt time.Time) error {
 	var errs error
 	for _, ent := range entitlements {
 		start := time.Now()
@@ -312,7 +315,7 @@ func (r *Recalculator) sendEntitlementDeletedEvent(ctx context.Context, ent enti
 			Namespace: models.NamespaceID{
 				ID: ent.Namespace,
 			},
-			Subject:   custSubj.Subject,
+			Subject:   lo.FromPtr(custSubj.Subject), // Subject is deprecated, use empty if nil
 			Customer:  custSubj.Customer,
 			Value:     nil, // explicit nil for deleted events
 			Feature:   feat,
@@ -373,7 +376,7 @@ func (r *Recalculator) sendEntitlementUpdatedEvent(ctx context.Context, ent enti
 			Namespace: models.NamespaceID{
 				ID: ent.Namespace,
 			},
-			Subject:   custSubj.Subject,
+			Subject:   lo.FromPtr(custSubj.Subject), // Subject is deprecated, use empty if nil
 			Customer:  custSubj.Customer,
 			Feature:   feat,
 			Operation: snapshot.ValueOperationUpdate,
@@ -414,5 +417,6 @@ func (r *Recalculator) getFeature(ctx context.Context, featureID pkgmodels.Names
 // customerAndSubject is a helper struct to be used in the cache
 type customerAndSubject struct {
 	Customer customer.Customer
-	Subject  subject.Subject
+	// Subject is optional - may be nil if customer has no usage attribution with subject keys
+	Subject *subject.Subject
 }

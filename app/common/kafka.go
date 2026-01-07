@@ -19,12 +19,6 @@ var Kafka = wire.NewSet(
 	NewKafkaProducer,
 	NewKafkaMetrics,
 
-	KafkaTopic,
-)
-
-var KafkaTopic = wire.NewSet(
-	NewKafkaAdminClient,
-	NewKafkaTopicProvisionerConfig,
 	NewKafkaTopicProvisioner,
 )
 
@@ -79,14 +73,22 @@ func NewKafkaAdminClient(conf config.KafkaConfiguration) (*kafka.AdminClient, er
 	return adminClient, nil
 }
 
-// TODO: fill struct fields automatically?
-func NewKafkaTopicProvisionerConfig(
-	adminClient *kafka.AdminClient,
+func NewKafkaTopicProvisioner(
+	kafkaConfig config.KafkaConfiguration,
+	settings config.TopicProvisionerConfig,
 	logger *slog.Logger,
 	meter metric.Meter,
-	settings config.TopicProvisionerConfig,
-) pkgkafka.TopicProvisionerConfig {
-	return pkgkafka.TopicProvisionerConfig{
+) (pkgkafka.TopicProvisioner, error) {
+	if !settings.Enabled {
+		return &pkgkafka.TopicProvisionerNoop{}, nil
+	}
+
+	adminClient, err := NewKafkaAdminClient(kafkaConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Kafka admin client: %w", err)
+	}
+
+	provisionerConfig := pkgkafka.TopicProvisionerConfig{
 		AdminClient:     adminClient,
 		Logger:          logger,
 		Meter:           meter,
@@ -94,16 +96,17 @@ func NewKafkaTopicProvisionerConfig(
 		CacheTTL:        settings.CacheTTL,
 		ProtectedTopics: settings.ProtectedTopics,
 	}
-}
 
-// TODO: do we need a separate constructor for the sake of a custom error message?
-func NewKafkaTopicProvisioner(conf pkgkafka.TopicProvisionerConfig) (pkgkafka.TopicProvisioner, error) {
-	topicProvisioner, err := pkgkafka.NewTopicProvisioner(conf)
+	topicProvisioner, err := pkgkafka.NewTopicProvisioner(provisionerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize topic provisioner: %w", err)
 	}
 
 	return topicProvisioner, nil
+}
+
+func NewNoopKafkaTopicProvisioner() pkgkafka.TopicProvisioner {
+	return &pkgkafka.TopicProvisionerNoop{}
 }
 
 func NewNamespacedTopicResolver(config config.KafkaIngestConfiguration) (*topicresolver.NamespacedTopicResolver, error) {
@@ -128,4 +131,38 @@ func NewKafkaIngestNamespaceHandler(
 	}
 
 	return handler, nil
+}
+
+func NewKafkaConsumer(conf pkgkafka.ConsumerConfig, logger *slog.Logger) (*kafka.Consumer, func(), error) {
+	if err := conf.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("invalid Kafka consumer configuration: %w", err)
+	}
+
+	consumerConfigMap, err := conf.AsConfigMap()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate Kafka consumer configuration map: %w", err)
+	}
+
+	consumer, err := kafka.NewConsumer(&consumerConfigMap)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to initialize Kafka consumer: %w", err)
+	}
+
+	kLogger := logger.WithGroup("kafka").WithGroup("consumer").With(
+		"group.id", conf.ConsumerGroupID,
+		"group.instance.id", conf.ConsumerGroupInstanceID,
+		"client.id", conf.ClientID,
+	)
+
+	// Enable Kafka client logging
+	// TODO: refactor ConsumeLogChannel to allow graceful shutdown
+	go pkgkafka.ConsumeLogChannel(consumer, kLogger)
+
+	closer := func() {
+		if err = consumer.Close(); err != nil {
+			kLogger.Error("failed to close Kafka consumer", slog.String("err", err.Error()))
+		}
+	}
+
+	return consumer, closer, nil
 }

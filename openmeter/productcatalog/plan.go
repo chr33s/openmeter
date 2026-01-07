@@ -1,6 +1,7 @@
 package productcatalog
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -73,7 +74,7 @@ func ValidatePlanPhases() models.ValidatorFunc[Plan] {
 		lastPhaseIdx := len(p.Phases) - 1
 
 		for idx, phase := range p.Phases {
-			phaseFieldSelector := models.NewFieldSelectors(
+			phaseFieldSelector := models.NewFieldSelectorGroup(
 				models.NewFieldSelector("phases").
 					WithExpression(
 						models.NewFieldAttrValue("key", phase.Key),
@@ -92,7 +93,7 @@ func ValidatePlanPhases() models.ValidatorFunc[Plan] {
 
 			// Check for duplicated phase keys
 			if _, ok := phaseKeys[phase.Key]; ok {
-				selector := models.NewFieldSelectors(
+				selector := models.NewFieldSelectorGroup(
 					models.NewFieldSelector("phases").
 						WithExpression(
 							models.NewFieldAttrValue("key", phase.Key),
@@ -135,7 +136,7 @@ func ValidatePlanHasAlignedBillingCadences() models.ValidatorFunc[Plan] {
 
 		for _, phase := range p.Phases {
 			for _, rateCard := range phase.RateCards.Billables() {
-				rateCardFieldSelector := models.NewFieldSelectors(
+				rateCardFieldSelector := models.NewFieldSelectorGroup(
 					models.NewFieldSelector("phases").
 						WithExpression(
 							models.NewFieldAttrValue("key", phase.Key),
@@ -327,4 +328,25 @@ func (p PlanMeta) StatusAt(t time.Time) PlanStatus {
 	}
 
 	return PlanStatusInvalid
+}
+
+func ValidatePlanWithFeatures(ctx context.Context, resolver NamespacedFeatureResolver) models.ValidatorFunc[Plan] {
+	return func(p Plan) error {
+		var errs []error
+
+		for _, phase := range p.Phases {
+			phaseFieldSelector := models.NewFieldSelectorGroup(
+				models.NewFieldSelector("phases").
+					WithExpression(
+						models.NewFieldAttrValue("key", phase.Key),
+					),
+			)
+
+			if err := ValidateRateCardsWithFeatures(ctx, resolver)(phase.RateCards); err != nil {
+				errs = append(errs, models.ErrorWithFieldPrefix(phaseFieldSelector, err))
+			}
+		}
+
+		return errors.Join(errs...)
+	}
 }

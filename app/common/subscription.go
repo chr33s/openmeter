@@ -19,12 +19,14 @@ import (
 	subscriptionaddonrepo "github.com/openmeterio/openmeter/openmeter/subscription/addon/repo"
 	subscriptionaddonservice "github.com/openmeterio/openmeter/openmeter/subscription/addon/service"
 	subscriptionentitlement "github.com/openmeterio/openmeter/openmeter/subscription/entitlement"
+	annotationhook "github.com/openmeterio/openmeter/openmeter/subscription/hooks/annotations"
 	subscriptionrepo "github.com/openmeterio/openmeter/openmeter/subscription/repo"
 	subscriptionservice "github.com/openmeterio/openmeter/openmeter/subscription/service"
 	subscriptioncustomer "github.com/openmeterio/openmeter/openmeter/subscription/validators/customer"
 	subscriptionworkflow "github.com/openmeterio/openmeter/openmeter/subscription/workflow"
 	subscriptionworkflowservice "github.com/openmeterio/openmeter/openmeter/subscription/workflow/service"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/ffx"
 	"github.com/openmeterio/openmeter/pkg/framework/lockr"
 )
 
@@ -51,6 +53,7 @@ func NewSubscriptionServices(
 	addonService addon.Service,
 	eventPublisher eventbus.Publisher,
 	lockr *lockr.Locker,
+	featureFlags ffx.Service,
 ) (SubscriptionServiceWithWorkflow, error) {
 	subscriptionRepo := subscriptionrepo.NewSubscriptionRepo(db)
 	subscriptionPhaseRepo := subscriptionrepo.NewSubscriptionPhaseRepo(db)
@@ -62,7 +65,7 @@ func NewSubscriptionServices(
 		subscriptionItemRepo,
 	)
 
-	subscriptionService := subscriptionservice.New(subscriptionservice.ServiceConfig{
+	subscriptionService, err := subscriptionservice.New(subscriptionservice.ServiceConfig{
 		SubscriptionRepo:      subscriptionRepo,
 		SubscriptionPhaseRepo: subscriptionPhaseRepo,
 		SubscriptionItemRepo:  subscriptionItemRepo,
@@ -71,8 +74,12 @@ func NewSubscriptionServices(
 		FeatureService:        featureConnector,
 		TransactionManager:    subscriptionRepo,
 		Publisher:             eventPublisher,
+		FeatureFlags:          featureFlags,
 		Lockr:                 lockr,
 	})
+	if err != nil {
+		return SubscriptionServiceWithWorkflow{}, err
+	}
 
 	subAddRepo := subscriptionaddonrepo.NewSubscriptionAddonRepo(db)
 	subAddQtyRepo := subscriptionaddonrepo.NewSubscriptionAddonQuantityRepo(db)
@@ -98,6 +105,7 @@ func NewSubscriptionServices(
 		AddonService:       subAddSvc,
 		Logger:             logger.With("subsystem", "subscription.workflow.service"),
 		Lockr:              lockr,
+		FeatureFlags:       featureFlags,
 	})
 
 	planSubscriptionService := subscriptionchangeservice.New(subscriptionchangeservice.Config{
@@ -110,6 +118,15 @@ func NewSubscriptionServices(
 
 	validator, err := subscriptioncustomer.NewValidator(subscriptionService, customerService)
 	if err != nil {
+		return SubscriptionServiceWithWorkflow{}, err
+	}
+
+	annotationCleanupHook, err := annotationhook.NewAnnotationCleanupHook(subscriptionService, subscriptionRepo, logger)
+	if err != nil {
+		return SubscriptionServiceWithWorkflow{}, err
+	}
+
+	if err := subscriptionService.RegisterHook(annotationCleanupHook); err != nil {
 		return SubscriptionServiceWithWorkflow{}, err
 	}
 

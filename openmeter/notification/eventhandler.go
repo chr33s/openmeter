@@ -6,8 +6,10 @@ import (
 )
 
 const (
-	DefaultReconcileInterval = 15 * time.Second
-	DefaultDispatchTimeout   = 30 * time.Second
+	DefaultReconcileInterval           = 15 * time.Second
+	DefaultDispatchTimeout             = 30 * time.Second
+	DefaultDeliveryStatePendingTimeout = 3 * time.Hour
+	DefaultDeliveryStateSendingTimeout = 48 * time.Hour
 )
 
 type EventHandler interface {
@@ -23,5 +25,5 @@ type EventReconciler interface {
 }
 
 type EventDispatcher interface {
-	Dispatch(*Event) error
+	Dispatch(ctx context.Context, event *Event) error
 }

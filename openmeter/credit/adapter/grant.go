@@ -41,7 +41,8 @@ func (g *grantDBADapter) CreateGrant(ctx context.Context, grant grant.RepoCreate
 		SetPriority(grant.Priority).
 		SetEffectiveAt(grant.EffectiveAt).
 		SetExpiration(grant.Expiration).
-		SetExpiresAt(grant.ExpiresAt).
+		SetNillableExpiresAt(grant.ExpiresAt).
+		SetAnnotations(grant.Annotations).
 		SetMetadata(grant.Metadata).
 		SetResetMaxRollover(grant.ResetMaxRollover).
 		SetResetMinRollover(grant.ResetMinRollover)
@@ -62,6 +63,14 @@ func (g *grantDBADapter) CreateGrant(ctx context.Context, grant grant.RepoCreate
 	return &mapped, nil
 }
 
+func (g *grantDBADapter) DeleteOwnerGrants(ctx context.Context, ownerID models.NamespacedID) error {
+	command := g.db.Grant.Update().
+		SetDeletedAt(clock.Now()).
+		Where(db_grant.OwnerID(ownerID.ID), db_grant.Namespace(ownerID.Namespace))
+
+	return command.Exec(ctx)
+}
+
 // translates to a delete
 func (g *grantDBADapter) VoidGrant(ctx context.Context, grantID models.NamespacedID, at time.Time) error {
 	// TODO: transaction and locking
@@ -74,18 +83,36 @@ func (g *grantDBADapter) VoidGrant(ctx context.Context, grantID models.Namespace
 func (g *grantDBADapter) ListGrants(ctx context.Context, params grant.ListParams) (pagination.Result[grant.Grant], error) {
 	query := g.db.Grant.Query().Where(db_grant.Namespace(params.Namespace))
 
+	now := clock.Now()
+
 	if params.OwnerID != nil {
 		query = query.Where(db_grant.OwnerID(*params.OwnerID))
 	}
 
 	if !params.IncludeDeleted {
 		query = query.Where(
-			db_grant.Or(db_grant.DeletedAtIsNil(), db_grant.DeletedAtGT(clock.Now())),
+			db_grant.Or(db_grant.DeletedAtIsNil(), db_grant.DeletedAtGT(now)),
 			db_grant.HasEntitlementWith(db_entitlement.Or(
 				db_entitlement.DeletedAtIsNil(),
-				db_entitlement.DeletedAtGT(clock.Now()),
+				db_entitlement.DeletedAtGT(now),
 			)),
 		)
+	}
+
+	if len(params.CustomerIDs) > 0 {
+		query = query.Where(db_grant.HasEntitlementWith(
+			db_entitlement.HasCustomerWith(
+				customerdb.IDIn(params.CustomerIDs...),
+				customerdb.Or(
+					customerdb.DeletedAtIsNil(),
+					customerdb.DeletedAtGT(now),
+				),
+			),
+			db_entitlement.Or(
+				db_entitlement.DeletedAtIsNil(),
+				db_entitlement.DeletedAtGT(now),
+			),
+		))
 	}
 
 	if len(params.SubjectKeys) > 0 {
@@ -93,9 +120,15 @@ func (g *grantDBADapter) ListGrants(ctx context.Context, params grant.ListParams
 			db_entitlement.HasCustomerWith(
 				customerdb.HasSubjectsWith(
 					customersubjectsdb.SubjectKeyIn(params.SubjectKeys...),
-					customersubjectsdb.DeletedAtIsNil(),
+					customersubjectsdb.Or(
+						customersubjectsdb.DeletedAtIsNil(),
+						customersubjectsdb.DeletedAtGT(now),
+					),
 				),
-				customerdb.DeletedAtIsNil(),
+				customerdb.Or(
+					customerdb.DeletedAtIsNil(),
+					customerdb.DeletedAtGT(now),
+				),
 			),
 		))
 	}
@@ -181,7 +214,7 @@ func (g *grantDBADapter) ListActiveGrantsBetween(ctx context.Context, owner mode
 		Where(db_grant.AmountGTE(0.0)). // For a time we allowed negative grant amounts with an undefined behavior, for continuity we just silently ignore them.
 		Where(
 			db_grant.Or(
-				db_grant.And(db_grant.EffectiveAtLT(from), db_grant.ExpiresAtGT(from)),
+				db_grant.And(db_grant.EffectiveAtLT(from), db_grant.Or(db_grant.ExpiresAtGT(from), db_grant.ExpiresAtIsNil())),
 				db_grant.And(db_grant.EffectiveAtGTE(from), db_grant.EffectiveAtLT(to)),
 				db_grant.EffectiveAt(from),
 				db_grant.EffectiveAt(to),
@@ -236,6 +269,7 @@ func mapGrantEntity(entity *db.Grant) grant.Grant {
 		EffectiveAt:      entity.EffectiveAt,
 		Expiration:       entity.Expiration,
 		ExpiresAt:        entity.ExpiresAt,
+		Annotations:      entity.Annotations,
 		Metadata:         entity.Metadata,
 		ResetMaxRollover: entity.ResetMaxRollover,
 		ResetMinRollover: entity.ResetMinRollover,

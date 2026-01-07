@@ -3,8 +3,10 @@ package subscription
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
+	"github.com/openmeterio/openmeter/pkg/framework/commonhttp"
 	"github.com/openmeterio/openmeter/pkg/models"
 )
 
@@ -18,6 +20,7 @@ const ErrCodeSubscriptionBillingPeriodQueriedBeforeSubscriptionStart models.Erro
 var ErrSubscriptionBillingPeriodQueriedBeforeSubscriptionStart = models.NewValidationIssue(
 	ErrCodeSubscriptionBillingPeriodQueriedBeforeSubscriptionStart,
 	"billing period queried before subscription start",
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 func NewErrSubscriptionBillingPeriodQueriedBeforeSubscriptionStart(queriedAt, subscriptionStart time.Time) error {
@@ -27,6 +30,24 @@ func NewErrSubscriptionBillingPeriodQueriedBeforeSubscriptionStart(queriedAt, su
 func IsErrSubscriptionBillingPeriodQueriedBeforeSubscriptionStart(err error) bool {
 	return IsValidationIssueWithCode(err, ErrCodeSubscriptionBillingPeriodQueriedBeforeSubscriptionStart)
 }
+
+const ErrCodeOnlySingleSubscriptionAllowed models.ErrorCode = "only_single_subscription_allowed_per_customer_at_a_time"
+
+var ErrOnlySingleSubscriptionAllowed = models.NewValidationIssue(
+	ErrCodeOnlySingleSubscriptionAllowed,
+	"only single subscription is allowed per customer at a time",
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusConflict),
+)
+
+var ErrRestoreSubscriptionNotAllowedForMultiSubscription = models.NewGenericForbiddenError(errors.New("restore subscription is not allowed for multi-subscription"))
+
+const ErrCodeOnlySingleSubscriptionItemAllowedAtATime models.ErrorCode = "only_single_subscription_item_allowed_at_a_time"
+
+var ErrOnlySingleSubscriptionItemAllowedAtATime = models.NewValidationIssue(
+	ErrCodeOnlySingleSubscriptionItemAllowedAtATime,
+	"for any given feature, only one subscription item with entitlements or billable prices can exist at a time",
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusConflict),
+)
 
 // TODO(galexi): "ValidationIssue" is not the right concept here. We should have a different kind of error with all this capability. It's used here as a hack to localize things for the time being.
 
@@ -68,6 +89,7 @@ var ErrSubscriptionBillingAnchorIsRequired = models.NewValidationIssue(
 	ErrCodeSubscriptionBillingAnchorIsRequired,
 	"billing anchor is required",
 	models.WithFieldString("billingAnchor"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 // Phase
@@ -78,6 +100,7 @@ var ErrSubscriptionPhaseStartAfterIsNegative = models.NewValidationIssue(
 	ErrCodeSubscriptionPhaseStartAfterIsNegative,
 	"subscription phase start after cannot be negative",
 	models.WithFieldString("startAfter"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 const ErrCodeSubscriptionPhaseHasNoItems models.ErrorCode = "subscription_phase_has_no_items"
@@ -86,6 +109,7 @@ var ErrSubscriptionPhaseHasNoItems = models.NewValidationIssue(
 	ErrCodeSubscriptionPhaseHasNoItems,
 	"subscription phase must have at least one item",
 	models.WithFieldString("items"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 const ErrCodeSubscriptionPhaseItemHistoryKeyMismatch models.ErrorCode = "subscription_phase_item_history_key_mismatch"
@@ -94,6 +118,7 @@ var ErrSubscriptionPhaseItemHistoryKeyMismatch = models.NewValidationIssue(
 	ErrCodeSubscriptionPhaseItemHistoryKeyMismatch,
 	"subscription phase item history key mismatch",
 	models.WithFieldString("itemsByKey"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 const ErrCodeSubscriptionPhaseItemKeyMismatchWithPhaseKey models.ErrorCode = "subscription_phase_item_key_mismatch_with_phase_key"
@@ -103,6 +128,7 @@ var ErrSubscriptionPhaseItemKeyMismatchWithPhaseKey = models.NewValidationIssue(
 	"subscription phase item key mismatch with phase key",
 	models.WithFieldString("itemKey"),
 	models.WithFieldString("phaseKey"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 // Item
@@ -113,6 +139,7 @@ var ErrSubscriptionItemBillingOverrideIsOnlyAllowedForBillableItems = models.New
 	ErrCodeSubscriptionItemBillingOverrideIsOnlyAllowedForBillableItems,
 	"billing override is only allowed for billable items",
 	models.WithFieldString("billingBehaviorOverride"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 const ErrCodeSubscriptionItemActiveFromOverrideRelativeToPhaseStartIsNegative models.ErrorCode = "subscription_item_active_from_override_relative_to_phase_start_is_negative"
@@ -121,6 +148,7 @@ var ErrSubscriptionItemActiveFromOverrideRelativeToPhaseStartIsNegative = models
 	ErrCodeSubscriptionItemActiveFromOverrideRelativeToPhaseStartIsNegative,
 	"active from override relative to phase start cannot be negative",
 	models.WithFieldString("activeFromOverrideRelativeToPhaseStart"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 const ErrCodeSubscriptionItemActiveToOverrideRelativeToPhaseStartIsNegative models.ErrorCode = "subscription_item_active_to_override_relative_to_phase_start_is_negative"
@@ -129,6 +157,7 @@ var ErrSubscriptionItemActiveToOverrideRelativeToPhaseStartIsNegative = models.N
 	ErrCodeSubscriptionItemActiveToOverrideRelativeToPhaseStartIsNegative,
 	"active to override relative to phase start cannot be negative",
 	models.WithFieldString("activeToOverrideRelativeToPhaseStart"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 const ErrCodeSubscriptionItemHistoryOverlap models.ErrorCode = "subscription_item_history_overlap"
@@ -137,6 +166,7 @@ var ErrSubscriptionItemHistoryOverlap = models.NewValidationIssue(
 	ErrCodeSubscriptionItemHistoryOverlap,
 	"subscription item history overlap",
 	models.WithFieldString("itemsByKey"),
+	commonhttp.WithHTTPStatusCodeAttribute(http.StatusBadRequest),
 )
 
 //

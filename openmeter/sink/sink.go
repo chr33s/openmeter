@@ -284,7 +284,7 @@ func (s *Sink) flush(ctx context.Context) error {
 	dedupedMessages := dedupeSinkMessages(messages)
 
 	// If deduplicator is set, let's reexecute the deduplication to decrease the number of messages double persisted
-	if s.config.Deduplicator != nil {
+	if s.config.Deduplicator != nil && len(dedupedMessages) > 0 {
 		dedupeResults, err := s.config.Deduplicator.CheckUniqueBatch(ctx, lo.Map(dedupedMessages, func(message sinkmodels.SinkMessage, _ int) dedupe.Item {
 			return message.GetDedupeItem()
 		}))
@@ -409,7 +409,7 @@ func (s *Sink) persistToStorage(ctx context.Context, messages []sinkmodels.SinkM
 	// Flter out dropped messages
 	for _, message := range messages {
 		switch message.Status.State {
-		case sinkmodels.OK, sinkmodels.INVALID:
+		case sinkmodels.OK:
 			// Do nothing: include in batch
 		case sinkmodels.DROP:
 			// Skip event from batch
@@ -456,18 +456,31 @@ func (s *Sink) dedupeSet(ctx context.Context, messages []sinkmodels.SinkMessage)
 
 	dedupeItems := []dedupe.Item{}
 	for _, message := range messages {
-		// Let's not insert already dropped messages into the deduplicator as this signals
-		// that we had a problem validating the message, we could redo any validation as needed
-		// later but if any error was transient let's retry the message if it's sent again.
-		if message.Status.State == sinkmodels.DROP {
-			continue
-		}
+		switch message.Status.State {
+		case sinkmodels.OK:
+			dedupeItems = append(dedupeItems, dedupe.Item{
+				Namespace: message.Namespace,
+				ID:        message.Serialized.Id,
+				Source:    message.Serialized.Source,
+			})
+		case sinkmodels.DROP:
+			// Let's not insert already dropped messages into the deduplicator as this signals
+			// that we had a problem validating the message, we could redo any validation as needed
+			// later but if any error was transient let's retry the message if it's sent again.
 
-		dedupeItems = append(dedupeItems, dedupe.Item{
-			Namespace: message.Namespace,
-			ID:        message.Serialized.Id,
-			Source:    message.Serialized.Source,
-		})
+			if s.config.LogDroppedEvents {
+				logger.WarnContext(ctx, "event dropped",
+					slog.String("namespace", message.Namespace),
+					slog.String("event", string(message.KafkaMessage.Value)),
+					slog.String("error", message.Status.DropError.Error()),
+					slog.String("status", message.Status.State.String()),
+				)
+			}
+
+			continue
+		default:
+			logger.ErrorContext(ctx, "unknown state type in dedup set", "state", message.Status.State.String())
+		}
 	}
 
 	if len(dedupeItems) == 0 {
@@ -664,7 +677,13 @@ func (s *Sink) Run(ctx context.Context) error {
 				s.messageCounter.Add(ctx, 1, metric.WithAttributes(namespaceAttr))
 
 				s.buffer.Add(*sinkMessage)
-				logger.Debug("event added to buffer", "partition", e.TopicPartition.Partition, "offset", e.TopicPartition.Offset, "event", sinkMessage.Serialized)
+
+				logger.DebugContext(ctx, "event added to buffer",
+					"partition", e.TopicPartition.Partition,
+					"offset", e.TopicPartition.Offset,
+					"event", sinkMessage.Serialized,
+					"state", sinkMessage.Status.State.String(),
+				)
 
 				// Flush buffer and commit messages
 				if s.buffer.Size() >= s.config.MinCommitCount {
@@ -859,8 +878,8 @@ func (s *Sink) parseMessage(ctx context.Context, e *kafka.Message) (*sinkmodels.
 	sinkMessage.Namespace = namespace
 
 	// Parse Kafka Event
-	kafkaCloudEvent := &serializer.CloudEventsKafkaPayload{}
-	err := json.Unmarshal(e.Value, kafkaCloudEvent)
+	kafkaCloudEvent := serializer.CloudEventsKafkaPayload{}
+	err := json.Unmarshal(e.Value, &kafkaCloudEvent)
 	if err != nil {
 		sinkMessage.Status = sinkmodels.ProcessingStatus{
 			State:     sinkmodels.DROP,
@@ -870,7 +889,17 @@ func (s *Sink) parseMessage(ctx context.Context, e *kafka.Message) (*sinkmodels.
 		// We should never have events we can't json parse, so we drop them
 		return sinkMessage, nil
 	}
-	sinkMessage.Serialized = kafkaCloudEvent
+
+	if err = serializer.ValidateKafkaPayloadToCloudEvent(kafkaCloudEvent); err != nil {
+		sinkMessage.Status = sinkmodels.ProcessingStatus{
+			State:     sinkmodels.DROP,
+			DropError: fmt.Errorf("failed to validate cloudevents message: %w", err),
+		}
+
+		return sinkMessage, nil
+	}
+
+	sinkMessage.Serialized = &kafkaCloudEvent
 
 	// Dedupe, this stores key in store which means if sink fails and restarts it will not process the same message again
 	// Dedupe is an optional dependency, so we check if it's set
@@ -933,33 +962,6 @@ func (s *Sink) Close() error {
 		s.flushTimer.Stop()
 	}
 
-	if s.config.Consumer != nil {
-		logger.Info("closing Kafka consumer")
-		if err := s.config.Consumer.Close(); err != nil {
-			logger.Error("failed to close consumer client", slog.String("err", err.Error()))
-		}
-	}
-
-	if s.config.FlushEventHandler != nil {
-		logger.Info("shutting down flush success handlers")
-		if err := s.config.FlushEventHandler.Close(); err != nil {
-			logger.Error("failed to close flush success handler", slog.String("err", err.Error()))
-		}
-
-		drainTimeoutContext, cancel := context.WithTimeout(context.Background(), s.config.DrainTimeout)
-		defer cancel()
-		if err := s.config.FlushEventHandler.WaitForDrain(drainTimeoutContext); err != nil {
-			logger.Error("failed to drain flush success handlers", slog.String("err", err.Error()))
-		}
-	}
-
-	if s.config.Deduplicator != nil {
-		logger.Info("closing deduplicator")
-		if err := s.config.Deduplicator.Close(); err != nil {
-			logger.Error("failed to close deduplicator", "error", err)
-		}
-	}
-
 	return nil
 }
 
@@ -969,15 +971,25 @@ func dedupeSinkMessages(events []sinkmodels.SinkMessage) []sinkmodels.SinkMessag
 	list := []sinkmodels.SinkMessage{}
 
 	for _, event := range events {
-		key := dedupe.Item{
-			Namespace: event.Namespace,
-			ID:        event.Serialized.Id,
-			Source:    event.Serialized.Source,
-		}.Key()
-		if _, value := keys[key]; !value {
-			keys[key] = true
-			list = append(list, event)
+		switch event.Status.State {
+		case sinkmodels.OK:
+			key := dedupe.Item{
+				Namespace: event.Namespace,
+				ID:        event.Serialized.Id,
+				Source:    event.Serialized.Source,
+			}.Key()
+
+			if _, value := keys[key]; !value {
+				keys[key] = true
+				list = append(list, event)
+			}
+		case sinkmodels.DROP:
+			continue
+		default:
+			// TODO: we should log/error in this case
+			continue
 		}
 	}
+
 	return list
 }

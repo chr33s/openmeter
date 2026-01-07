@@ -53,7 +53,7 @@ func TestEffectivePeriod_Validate(t *testing.T) {
 			},
 			ExpectedError: true,
 			ExpectedValidationIssues: models.ValidationIssues{
-				ErrEffectivePeriodFromAfterTo.WithAttrs(map[string]interface{}{
+				ErrEffectivePeriodFromAfterTo.WithAttrs(models.Attributes{
 					"effectiveFrom": lo.ToPtr(now),
 					"effectiveTo":   lo.ToPtr(yesterday),
 				}),
@@ -67,7 +67,7 @@ func TestEffectivePeriod_Validate(t *testing.T) {
 			},
 			ExpectedError: true,
 			ExpectedValidationIssues: models.ValidationIssues{
-				ErrEffectivePeriodFromNotSet.WithAttrs(map[string]interface{}{
+				ErrEffectivePeriodFromNotSet.WithAttrs(models.Attributes{
 					"effectiveFrom": nil,
 					"effectiveTo":   lo.ToPtr(now),
 				}),
@@ -83,7 +83,8 @@ func TestEffectivePeriod_Validate(t *testing.T) {
 
 				issues, err := models.AsValidationIssues(err)
 				assert.NoError(t, err)
-				assert.Equalf(t, test.ExpectedValidationIssues, issues, "expected validation issues %v, got %v", test.ExpectedValidationIssues, issues)
+
+				models.RequireValidationIssuesMatch(t, test.ExpectedValidationIssues, issues)
 			} else {
 				assert.NoErrorf(t, test.EffectivePeriod.Validate(), "expected valid effective period")
 			}

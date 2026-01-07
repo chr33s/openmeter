@@ -29,14 +29,16 @@ func (s *Service) ListInvoices(ctx context.Context, input billing.ListInvoicesIn
 	}
 
 	for i := range invoices.Items {
+		invoiceID := invoices.Items[i].ID
+
 		invoices.Items[i], err = s.resolveWorkflowApps(ctx, invoices.Items[i])
 		if err != nil {
-			return billing.ListInvoicesResponse{}, fmt.Errorf("error resolving workflow apps [%s]: %w", invoices.Items[i].ID, err)
+			return billing.ListInvoicesResponse{}, fmt.Errorf("error resolving workflow apps [%s]: %w", invoiceID, err)
 		}
 
 		invoices.Items[i], err = s.resolveStatusDetails(ctx, invoices.Items[i])
 		if err != nil {
-			return billing.ListInvoicesResponse{}, fmt.Errorf("error resolving status details for invoice [%s]: %w", invoices.Items[i].ID, err)
+			return billing.ListInvoicesResponse{}, fmt.Errorf("error resolving status details for invoice [%s]: %w", invoiceID, err)
 		}
 
 		if input.Expand.RecalculateGatheringInvoice {
@@ -45,7 +47,7 @@ func (s *Service) ListInvoices(ctx context.Context, input billing.ListInvoicesIn
 				Expand:  input.Expand,
 			})
 			if err != nil {
-				return billing.ListInvoicesResponse{}, fmt.Errorf("error recalculating gathering invoice [%s]: %w", invoices.Items[i].ID, err)
+				return billing.ListInvoicesResponse{}, fmt.Errorf("error recalculating gathering invoice [%s]: %w", invoiceID, err)
 			}
 		}
 	}
@@ -153,7 +155,7 @@ func (s *Service) recalculateGatheringInvoice(ctx context.Context, in recalculat
 
 	inScopeLineSvcs, err := s.lineService.FromEntities(
 		lo.Filter(invoice.Lines.OrEmpty(), func(line *billing.Line, _ int) bool {
-			return line.Status == billing.InvoiceLineStatusValid && line.DeletedAt == nil
+			return line.DeletedAt == nil
 		}),
 	)
 	if err != nil {
@@ -219,6 +221,8 @@ func (s *Service) recalculateGatheringInvoice(ctx context.Context, in recalculat
 }
 
 func (s *Service) GetInvoiceByID(ctx context.Context, input billing.GetInvoiceByIdInput) (billing.Invoice, error) {
+	invoiceID := input.Invoice.ID
+
 	invoice, err := s.adapter.GetInvoiceById(ctx, input)
 	if err != nil {
 		return billing.Invoice{}, err
@@ -226,12 +230,12 @@ func (s *Service) GetInvoiceByID(ctx context.Context, input billing.GetInvoiceBy
 
 	invoice, err = s.resolveWorkflowApps(ctx, invoice)
 	if err != nil {
-		return billing.Invoice{}, fmt.Errorf("error resolving workload apps for invoice [%s]: %w", invoice.ID, err)
+		return billing.Invoice{}, fmt.Errorf("error resolving workload apps for invoice [%s]: %w", invoiceID, err)
 	}
 
 	invoice, err = s.resolveStatusDetails(ctx, invoice)
 	if err != nil {
-		return billing.Invoice{}, fmt.Errorf("error resolving status details for invoice [%s]: %w", invoice.ID, err)
+		return billing.Invoice{}, fmt.Errorf("error resolving status details for invoice [%s]: %w", invoiceID, err)
 	}
 
 	if input.Expand.RecalculateGatheringInvoice {
@@ -240,7 +244,7 @@ func (s *Service) GetInvoiceByID(ctx context.Context, input billing.GetInvoiceBy
 			Expand:  input.Expand,
 		})
 		if err != nil {
-			return billing.Invoice{}, fmt.Errorf("error recalculating gathering invoice [%s]: %w", invoice.ID, err)
+			return billing.Invoice{}, fmt.Errorf("error recalculating gathering invoice [%s]: %w", invoiceID, err)
 		}
 	}
 
@@ -322,6 +326,9 @@ func (s *Service) InvoicePendingLines(ctx context.Context, input billing.Invoice
 					return nil, fmt.Errorf("generating invoice number: %w", err)
 				}
 
+				// Let's calculate when the invoice will be collected
+				// - do we push back the collection date here on gathering creation (if firs day of month billing)???
+
 				// let's create the invoice
 				invoice, err := s.adapter.CreateInvoice(ctx, billing.CreateInvoiceAdapterInput{
 					Namespace: input.Customer.Namespace,
@@ -338,10 +345,12 @@ func (s *Service) InvoicePendingLines(ctx context.Context, input billing.Invoice
 					return nil, fmt.Errorf("creating invoice: %w", err)
 				}
 
+				invoiceID := invoice.ID
+
 				// let's resolve the workflow apps as some checks such as CanDraftSyncAdvance depends on the apps
 				invoice, err = s.resolveWorkflowApps(ctx, invoice)
 				if err != nil {
-					return nil, fmt.Errorf("error resolving workflow apps for invoice [%s]: %w", invoice.ID, err)
+					return nil, fmt.Errorf("error resolving workflow apps for invoice [%s]: %w", invoiceID, err)
 				}
 
 				// let's associate the invoice lines to the invoice
@@ -355,7 +364,7 @@ func (s *Service) InvoicePendingLines(ctx context.Context, input billing.Invoice
 				// to either pass in the invoice or the ID
 				savedInvoice, err := s.updateInvoice(ctx, invoice)
 				if err != nil {
-					return nil, fmt.Errorf("updating invoice[%s]: %w", invoice.ID, err)
+					return nil, fmt.Errorf("updating invoice[%s]: %w", invoiceID, err)
 				}
 
 				createdInvoices = append(createdInvoices, savedInvoice)
@@ -466,9 +475,11 @@ func (s *Service) InvoicePendingLines(ctx context.Context, input billing.Invoice
 							return fmt.Errorf("activating invoice: %w", err)
 						}
 
+						invoiceID := sm.Invoice.ID
+
 						sm.Invoice, err = s.updateInvoice(ctx, sm.Invoice)
 						if err != nil {
-							return fmt.Errorf("updating invoice[%s]: %w", sm.Invoice.ID, err)
+							return fmt.Errorf("updating invoice[%s]: %w", invoiceID, err)
 						}
 
 						return nil
@@ -710,7 +721,7 @@ func (s *Service) RetryInvoice(ctx context.Context, input billing.RetryInvoiceIn
 		}
 
 		if _, err := s.updateInvoice(ctx, invoice); err != nil {
-			return billing.Invoice{}, fmt.Errorf("updating invoice[%s]: %w", invoice.ID, err)
+			return billing.Invoice{}, fmt.Errorf("updating invoice[%s]: %w", input.ID, err)
 		}
 
 		return s.executeTriggerOnInvoice(ctx, input, billing.TriggerRetry)
@@ -792,7 +803,7 @@ func (s *Service) executeTriggerOnInvoice(ctx context.Context, invoiceID billing
 					// This forces line ID generation for new or added lines
 					sm.Invoice, err = s.updateInvoice(ctx, sm.Invoice)
 					if err != nil {
-						return fmt.Errorf("updating invoice[%s]: %w", sm.Invoice.ID, err)
+						return fmt.Errorf("updating invoice[%s]: %w", invoiceID, err)
 					}
 				}
 
@@ -806,7 +817,7 @@ func (s *Service) executeTriggerOnInvoice(ctx context.Context, invoiceID billing
 
 					sm.Invoice, err = s.updateInvoice(ctx, sm.Invoice)
 					if err != nil {
-						return fmt.Errorf("updating invoice[%s]: %w", sm.Invoice.ID, err)
+						return fmt.Errorf("updating invoice[%s]: %w", invoiceID, err)
 					}
 
 					return nil
@@ -818,7 +829,7 @@ func (s *Service) executeTriggerOnInvoice(ctx context.Context, invoiceID billing
 
 				sm.Invoice, err = s.updateInvoice(ctx, sm.Invoice)
 				if err != nil {
-					return fmt.Errorf("updating invoice[%s]: %w", sm.Invoice.ID, err)
+					return fmt.Errorf("updating invoice[%s]: %w", invoiceID, err)
 				}
 
 				return nil
@@ -927,7 +938,7 @@ func (s *Service) UpdateInvoice(ctx context.Context, input billing.UpdateInvoice
 
 			invoice, err = s.updateInvoice(ctx, invoice)
 			if err != nil {
-				return billing.Invoice{}, fmt.Errorf("updating invoice[%s]: %w", invoice.ID, err)
+				return billing.Invoice{}, fmt.Errorf("updating invoice[%s]: %w", input.Invoice.ID, err)
 			}
 
 			// Auto delete the invoice if it has no lines, this needs to happen here, as we are in a
@@ -973,7 +984,7 @@ func (s *Service) UpdateInvoice(ctx context.Context, input billing.UpdateInvoice
 func (s Service) updateInvoice(ctx context.Context, in billing.UpdateInvoiceAdapterInput) (billing.Invoice, error) {
 	invoice, err := s.resolveStatusDetails(ctx, in)
 	if err != nil {
-		return billing.Invoice{}, fmt.Errorf("error resolving status details for invoice [%s]: %w", invoice.ID, err)
+		return billing.Invoice{}, fmt.Errorf("error resolving status details for invoice [%s]: %w", in.ID, err)
 	}
 
 	invoice, err = s.adapter.UpdateInvoice(ctx, invoice)
@@ -983,7 +994,7 @@ func (s Service) updateInvoice(ctx context.Context, in billing.UpdateInvoiceAdap
 
 	invoice, err = s.resolveWorkflowApps(ctx, invoice)
 	if err != nil {
-		return billing.Invoice{}, fmt.Errorf("error resolving workflow apps for invoice [%s]: %w", invoice.ID, err)
+		return billing.Invoice{}, fmt.Errorf("error resolving workflow apps for invoice [%s]: %w", in.ID, err)
 	}
 
 	return invoice, nil
@@ -992,7 +1003,7 @@ func (s Service) updateInvoice(ctx context.Context, in billing.UpdateInvoiceAdap
 func (s Service) checkIfLinesAreInvoicable(ctx context.Context, invoice *billing.Invoice, progressiveBilling bool) error {
 	inScopeLineServices, err := s.lineService.FromEntities(
 		lo.Filter(invoice.Lines.OrEmpty(), func(line *billing.Line, _ int) bool {
-			return line.Status == billing.InvoiceLineStatusValid && line.DeletedAt == nil
+			return line.DeletedAt == nil
 		}),
 	)
 	if err != nil {
@@ -1223,15 +1234,17 @@ func (s *Service) RecalculateGatheringInvoices(ctx context.Context, input billin
 				return fmt.Errorf("calculating gathering invoice: %w", err)
 			}
 
+			invoiceID := invoice.ID
+
 			invoice, err = s.updateInvoice(ctx, invoice)
 			if err != nil {
-				return fmt.Errorf("updating invoice[%s]: %w", invoice.ID, err)
+				return fmt.Errorf("updating invoice[%s]: %w", invoiceID, err)
 			}
 
 			if invoice.Lines.NonDeletedLineCount() == 0 {
 				if err := s.adapter.DeleteGatheringInvoices(ctx, billing.DeleteGatheringInvoicesInput{
 					Namespace:  input.Namespace,
-					InvoiceIDs: []string{invoice.ID},
+					InvoiceIDs: []string{invoiceID},
 				}); err != nil {
 					return fmt.Errorf("deleting gathering invoice: %w", err)
 				}

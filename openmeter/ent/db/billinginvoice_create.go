@@ -627,6 +627,20 @@ func (_c *BillingInvoiceCreate) SetNillableCollectionAt(v *time.Time) *BillingIn
 	return _c
 }
 
+// SetPaymentProcessingEnteredAt sets the "payment_processing_entered_at" field.
+func (_c *BillingInvoiceCreate) SetPaymentProcessingEnteredAt(v time.Time) *BillingInvoiceCreate {
+	_c.mutation.SetPaymentProcessingEnteredAt(v)
+	return _c
+}
+
+// SetNillablePaymentProcessingEnteredAt sets the "payment_processing_entered_at" field if the given value is not nil.
+func (_c *BillingInvoiceCreate) SetNillablePaymentProcessingEnteredAt(v *time.Time) *BillingInvoiceCreate {
+	if v != nil {
+		_c.SetPaymentProcessingEnteredAt(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *BillingInvoiceCreate) SetID(v string) *BillingInvoiceCreate {
 	_c.mutation.SetID(v)
@@ -829,8 +843,10 @@ func (_c *BillingInvoiceCreate) check() error {
 			return &ValidationError{Name: "customer_name", err: fmt.Errorf(`db: validator failed for field "BillingInvoice.customer_name": %w`, err)}
 		}
 	}
-	if _, ok := _c.mutation.CustomerUsageAttribution(); !ok {
-		return &ValidationError{Name: "customer_usage_attribution", err: errors.New(`db: missing required field "BillingInvoice.customer_usage_attribution"`)}
+	if v, ok := _c.mutation.CustomerUsageAttribution(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "customer_usage_attribution", err: fmt.Errorf(`db: validator failed for field "BillingInvoice.customer_usage_attribution": %w`, err)}
+		}
 	}
 	if _, ok := _c.mutation.Number(); !ok {
 		return &ValidationError{Name: "number", err: errors.New(`db: missing required field "BillingInvoice.number"`)}
@@ -1136,6 +1152,10 @@ func (_c *BillingInvoiceCreate) createSpec() (*BillingInvoice, *sqlgraph.CreateS
 	if value, ok := _c.mutation.CollectionAt(); ok {
 		_spec.SetField(billinginvoice.FieldCollectionAt, field.TypeTime, value)
 		_node.CollectionAt = value
+	}
+	if value, ok := _c.mutation.PaymentProcessingEnteredAt(); ok {
+		_spec.SetField(billinginvoice.FieldPaymentProcessingEnteredAt, field.TypeTime, value)
+		_node.PaymentProcessingEnteredAt = &value
 	}
 	if nodes := _c.mutation.SourceBillingProfileIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -1779,6 +1799,12 @@ func (u *BillingInvoiceUpsert) UpdateCustomerUsageAttribution() *BillingInvoiceU
 	return u
 }
 
+// ClearCustomerUsageAttribution clears the value of the "customer_usage_attribution" field.
+func (u *BillingInvoiceUpsert) ClearCustomerUsageAttribution() *BillingInvoiceUpsert {
+	u.SetNull(billinginvoice.FieldCustomerUsageAttribution)
+	return u
+}
+
 // SetNumber sets the "number" field.
 func (u *BillingInvoiceUpsert) SetNumber(v string) *BillingInvoiceUpsert {
 	u.Set(billinginvoice.FieldNumber, v)
@@ -2076,6 +2102,24 @@ func (u *BillingInvoiceUpsert) UpdateCollectionAt() *BillingInvoiceUpsert {
 // ClearCollectionAt clears the value of the "collection_at" field.
 func (u *BillingInvoiceUpsert) ClearCollectionAt() *BillingInvoiceUpsert {
 	u.SetNull(billinginvoice.FieldCollectionAt)
+	return u
+}
+
+// SetPaymentProcessingEnteredAt sets the "payment_processing_entered_at" field.
+func (u *BillingInvoiceUpsert) SetPaymentProcessingEnteredAt(v time.Time) *BillingInvoiceUpsert {
+	u.Set(billinginvoice.FieldPaymentProcessingEnteredAt, v)
+	return u
+}
+
+// UpdatePaymentProcessingEnteredAt sets the "payment_processing_entered_at" field to the value that was provided on create.
+func (u *BillingInvoiceUpsert) UpdatePaymentProcessingEnteredAt() *BillingInvoiceUpsert {
+	u.SetExcluded(billinginvoice.FieldPaymentProcessingEnteredAt)
+	return u
+}
+
+// ClearPaymentProcessingEnteredAt clears the value of the "payment_processing_entered_at" field.
+func (u *BillingInvoiceUpsert) ClearPaymentProcessingEnteredAt() *BillingInvoiceUpsert {
+	u.SetNull(billinginvoice.FieldPaymentProcessingEnteredAt)
 	return u
 }
 
@@ -2683,6 +2727,13 @@ func (u *BillingInvoiceUpsertOne) UpdateCustomerUsageAttribution() *BillingInvoi
 	})
 }
 
+// ClearCustomerUsageAttribution clears the value of the "customer_usage_attribution" field.
+func (u *BillingInvoiceUpsertOne) ClearCustomerUsageAttribution() *BillingInvoiceUpsertOne {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.ClearCustomerUsageAttribution()
+	})
+}
+
 // SetNumber sets the "number" field.
 func (u *BillingInvoiceUpsertOne) SetNumber(v string) *BillingInvoiceUpsertOne {
 	return u.Update(func(s *BillingInvoiceUpsert) {
@@ -3030,6 +3081,27 @@ func (u *BillingInvoiceUpsertOne) UpdateCollectionAt() *BillingInvoiceUpsertOne 
 func (u *BillingInvoiceUpsertOne) ClearCollectionAt() *BillingInvoiceUpsertOne {
 	return u.Update(func(s *BillingInvoiceUpsert) {
 		s.ClearCollectionAt()
+	})
+}
+
+// SetPaymentProcessingEnteredAt sets the "payment_processing_entered_at" field.
+func (u *BillingInvoiceUpsertOne) SetPaymentProcessingEnteredAt(v time.Time) *BillingInvoiceUpsertOne {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.SetPaymentProcessingEnteredAt(v)
+	})
+}
+
+// UpdatePaymentProcessingEnteredAt sets the "payment_processing_entered_at" field to the value that was provided on create.
+func (u *BillingInvoiceUpsertOne) UpdatePaymentProcessingEnteredAt() *BillingInvoiceUpsertOne {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.UpdatePaymentProcessingEnteredAt()
+	})
+}
+
+// ClearPaymentProcessingEnteredAt clears the value of the "payment_processing_entered_at" field.
+func (u *BillingInvoiceUpsertOne) ClearPaymentProcessingEnteredAt() *BillingInvoiceUpsertOne {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.ClearPaymentProcessingEnteredAt()
 	})
 }
 
@@ -3804,6 +3876,13 @@ func (u *BillingInvoiceUpsertBulk) UpdateCustomerUsageAttribution() *BillingInvo
 	})
 }
 
+// ClearCustomerUsageAttribution clears the value of the "customer_usage_attribution" field.
+func (u *BillingInvoiceUpsertBulk) ClearCustomerUsageAttribution() *BillingInvoiceUpsertBulk {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.ClearCustomerUsageAttribution()
+	})
+}
+
 // SetNumber sets the "number" field.
 func (u *BillingInvoiceUpsertBulk) SetNumber(v string) *BillingInvoiceUpsertBulk {
 	return u.Update(func(s *BillingInvoiceUpsert) {
@@ -4151,6 +4230,27 @@ func (u *BillingInvoiceUpsertBulk) UpdateCollectionAt() *BillingInvoiceUpsertBul
 func (u *BillingInvoiceUpsertBulk) ClearCollectionAt() *BillingInvoiceUpsertBulk {
 	return u.Update(func(s *BillingInvoiceUpsert) {
 		s.ClearCollectionAt()
+	})
+}
+
+// SetPaymentProcessingEnteredAt sets the "payment_processing_entered_at" field.
+func (u *BillingInvoiceUpsertBulk) SetPaymentProcessingEnteredAt(v time.Time) *BillingInvoiceUpsertBulk {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.SetPaymentProcessingEnteredAt(v)
+	})
+}
+
+// UpdatePaymentProcessingEnteredAt sets the "payment_processing_entered_at" field to the value that was provided on create.
+func (u *BillingInvoiceUpsertBulk) UpdatePaymentProcessingEnteredAt() *BillingInvoiceUpsertBulk {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.UpdatePaymentProcessingEnteredAt()
+	})
+}
+
+// ClearPaymentProcessingEnteredAt clears the value of the "payment_processing_entered_at" field.
+func (u *BillingInvoiceUpsertBulk) ClearPaymentProcessingEnteredAt() *BillingInvoiceUpsertBulk {
+	return u.Update(func(s *BillingInvoiceUpsert) {
+		s.ClearPaymentProcessingEnteredAt()
 	})
 }
 

@@ -5,18 +5,21 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/samber/lo"
 
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
 	"github.com/openmeterio/openmeter/openmeter/subscription"
+	subscriptionvalidators "github.com/openmeterio/openmeter/openmeter/subscription/validators/subscription"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
 	"github.com/openmeterio/openmeter/pkg/clock"
+	"github.com/openmeterio/openmeter/pkg/ffx"
 	"github.com/openmeterio/openmeter/pkg/framework/lockr"
 	"github.com/openmeterio/openmeter/pkg/framework/transaction"
 	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/slicesx"
 )
 
 type ServiceConfig struct {
@@ -32,14 +35,31 @@ type ServiceConfig struct {
 	TransactionManager transaction.Creator
 	Publisher          eventbus.Publisher
 	Lockr              *lockr.Locker
-	// External validations (optional)
-	Validators []subscription.SubscriptionValidator
+	FeatureFlags       ffx.Service
+
+	// Hooks
+	Hooks []subscription.SubscriptionCommandHook
 }
 
-func New(conf ServiceConfig) subscription.Service {
-	return &service{
+func New(conf ServiceConfig) (subscription.Service, error) {
+	svc := &service{
 		ServiceConfig: conf,
 	}
+
+	val, err := subscriptionvalidators.NewSubscriptionUniqueConstraintValidator(subscriptionvalidators.SubscriptionUniqueConstraintValidatorConfig{
+		FeatureFlags:    conf.FeatureFlags,
+		QueryService:    svc,
+		CustomerService: svc.CustomerService,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := svc.RegisterHook(val); err != nil {
+		return nil, err
+	}
+
+	return svc, nil
 }
 
 var _ subscription.Service = &service{}
@@ -50,7 +70,7 @@ type service struct {
 	mu sync.RWMutex
 }
 
-func (s *service) RegisterValidator(validator subscription.SubscriptionValidator) error {
+func (s *service) RegisterHook(validator subscription.SubscriptionCommandHook) error {
 	if validator == nil {
 		return errors.New("invalid subscription validator: nil")
 	}
@@ -58,7 +78,7 @@ func (s *service) RegisterValidator(validator subscription.SubscriptionValidator
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.Validators = append(s.Validators, validator)
+	s.Hooks = append(s.Hooks, validator)
 
 	return nil
 }
@@ -111,6 +131,16 @@ func (s *service) Create(ctx context.Context, namespace string, spec subscriptio
 			return def, err
 		}
 
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.BeforeCreate(ctx, namespace, spec)
+		})...)
+		if err != nil {
+			return def, fmt.Errorf("failed to validate subscription: %w", err)
+		}
+
 		// Create subscription entity
 		sub, err := s.SubscriptionRepo.Create(ctx, spec.ToCreateSubscriptionEntityInput(namespace))
 		if err != nil {
@@ -144,11 +174,8 @@ func (s *service) Create(ctx context.Context, namespace string, spec subscriptio
 			return sub, err
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
-		err = errors.Join(lo.Map(s.Validators, func(v subscription.SubscriptionValidator, _ int) error {
-			return v.ValidateCreate(ctx, view)
+		err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.AfterCreate(ctx, view)
 		})...)
 		if err != nil {
 			return sub, fmt.Errorf("failed to validate subscription: %w", err)
@@ -180,6 +207,16 @@ func (s *service) Update(ctx context.Context, subscriptionID models.NamespacedID
 	}
 
 	return transaction.Run(ctx, s.TransactionManager, func(ctx context.Context) (subscription.Subscription, error) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.BeforeUpdate(ctx, subscriptionID, newSpec)
+		})...)
+		if err != nil {
+			return def, fmt.Errorf("failed to validate subscription: %w", err)
+		}
+
 		subs, err := s.sync(ctx, view, newSpec)
 		if err != nil {
 			return subs, err
@@ -191,11 +228,8 @@ func (s *service) Update(ctx context.Context, subscriptionID models.NamespacedID
 			return subs, err
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
-		err = errors.Join(lo.Map(s.Validators, func(v subscription.SubscriptionValidator, _ int) error {
-			return v.ValidateUpdate(ctx, view)
+		err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.AfterUpdate(ctx, updatedView)
 		})...)
 		if err != nil {
 			return subs, fmt.Errorf("failed to validate subscription: %w", err)
@@ -231,8 +265,8 @@ func (s *service) Delete(ctx context.Context, subscriptionID models.NamespacedID
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	err = errors.Join(lo.Map(s.Validators, func(v subscription.SubscriptionValidator, _ int) error {
-		return v.ValidateDelete(ctx, view)
+	err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+		return v.BeforeDelete(ctx, view)
 	})...)
 	if err != nil {
 		return fmt.Errorf("failed to validate subscription: %w", err)
@@ -305,8 +339,8 @@ func (s *service) Cancel(ctx context.Context, subscriptionID models.NamespacedID
 		s.mu.RLock()
 		defer s.mu.RUnlock()
 
-		err = errors.Join(lo.Map(s.Validators, func(v subscription.SubscriptionValidator, _ int) error {
-			return v.ValidateCancel(ctx, view)
+		err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.AfterCancel(ctx, view)
 		})...)
 		if err != nil {
 			return sub, fmt.Errorf("failed to validate subscription: %w", err)
@@ -342,6 +376,15 @@ func (s *service) Continue(ctx context.Context, subscriptionID models.Namespaced
 
 	// We can use sync to do this
 	return transaction.Run(ctx, s.TransactionManager, func(ctx context.Context) (subscription.Subscription, error) {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+
+		if err := errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.BeforeContinue(ctx, view)
+		})...); err != nil {
+			return subscription.Subscription{}, fmt.Errorf("failed to validate subscription: %w", err)
+		}
+
 		sub, err := s.sync(ctx, view, spec)
 		if err != nil {
 			return sub, err
@@ -353,11 +396,8 @@ func (s *service) Continue(ctx context.Context, subscriptionID models.Namespaced
 			return sub, err
 		}
 
-		s.mu.RLock()
-		defer s.mu.RUnlock()
-
-		err = errors.Join(lo.Map(s.Validators, func(v subscription.SubscriptionValidator, _ int) error {
-			return v.ValidateContinue(ctx, view)
+		err = errors.Join(lo.Map(s.Hooks, func(v subscription.SubscriptionCommandHook, _ int) error {
+			return v.AfterContinue(ctx, view)
 		})...)
 		if err != nil {
 			return sub, fmt.Errorf("failed to validate subscription: %w", err)
@@ -370,6 +410,10 @@ func (s *service) Continue(ctx context.Context, subscriptionID models.Namespaced
 
 		return sub, nil
 	})
+}
+
+func (s *service) UpdateAnnotations(ctx context.Context, subscriptionID models.NamespacedID, annotations models.Annotations) (*subscription.Subscription, error) {
+	return s.SubscriptionRepo.UpdateAnnotations(ctx, subscriptionID, annotations)
 }
 
 func (s *service) Get(ctx context.Context, subscriptionID models.NamespacedID) (subscription.Subscription, error) {
@@ -386,7 +430,6 @@ func (s *service) GetView(ctx context.Context, subscriptionID models.NamespacedI
 	ctx = subscription.NewSubscriptionOperationContext(ctx)
 
 	var def subscription.SubscriptionView
-	currentTime := clock.Now()
 
 	sub, err := s.Get(ctx, subscriptionID)
 	if err != nil {
@@ -407,73 +450,16 @@ func (s *service) GetView(ctx context.Context, subscriptionID models.NamespacedI
 		return def, fmt.Errorf("customer is nil")
 	}
 
-	phases, err := s.SubscriptionPhaseRepo.GetForSubscriptionAt(ctx, sub.NamespacedID, currentTime)
+	views, err := s.ExpandViews(ctx, []subscription.Subscription{sub})
 	if err != nil {
-		return def, err
+		return def, fmt.Errorf("failed to get views: %w", err)
 	}
 
-	items, err := s.SubscriptionItemRepo.GetForSubscriptionAt(ctx, sub.NamespacedID, currentTime)
-	if err != nil {
-		return def, err
+	if len(views) != 1 {
+		return def, fmt.Errorf("expected 1 view, got %d", len(views))
 	}
 
-	ents, err := s.EntitlementAdapter.GetForSubscriptionAt(ctx, sub.NamespacedID, currentTime)
-	if err != nil {
-		return def, err
-	}
-
-	entitlementFeatureIDs := lo.Map(ents, func(ent subscription.SubscriptionEntitlement, _ int) string {
-		return ent.Entitlement.FeatureID
-	})
-
-	itemFeatureKeys := lo.Map(lo.Filter(items, func(i subscription.SubscriptionItem, _ int) bool {
-		return i.RateCard.AsMeta().FeatureKey != nil
-	}), func(item subscription.SubscriptionItem, _ int) string {
-		return *item.RateCard.AsMeta().FeatureKey
-	})
-
-	featsOfEntsPaged, err := s.FeatureService.ListFeatures(ctx, feature.ListFeaturesParams{
-		Namespace:       sub.Namespace,
-		IncludeArchived: true, // We match by ID, so those exact features might since have been archived
-		IDsOrKeys:       lo.Uniq(entitlementFeatureIDs),
-	})
-	if err != nil {
-		return def, err
-	}
-
-	featsOfItemsPaged, err := s.FeatureService.ListFeatures(ctx, feature.ListFeaturesParams{
-		Namespace:       sub.Namespace,
-		IncludeArchived: false,
-		IDsOrKeys:       lo.Uniq(itemFeatureKeys),
-	})
-	if err != nil {
-		return def, err
-	}
-
-	view, err := subscription.NewSubscriptionView(
-		sub,
-		*cus,
-		phases,
-		items,
-		ents,
-		featsOfEntsPaged.Items,
-		featsOfItemsPaged.Items,
-	)
-	if err != nil {
-		return def, err
-	}
-
-	if view == nil {
-		return def, fmt.Errorf("view is nil")
-	}
-
-	return *view, nil
-}
-
-func (s *service) GetAllForCustomerSince(ctx context.Context, customerID models.NamespacedID, at time.Time) ([]subscription.Subscription, error) {
-	ctx = subscription.NewSubscriptionOperationContext(ctx)
-
-	return s.SubscriptionRepo.GetAllForCustomerSince(ctx, customerID, at)
+	return views[0], nil
 }
 
 func (s *service) List(ctx context.Context, input subscription.ListSubscriptionsInput) (subscription.SubscriptionList, error) {
@@ -484,6 +470,197 @@ func (s *service) List(ctx context.Context, input subscription.ListSubscriptions
 	}
 
 	return s.SubscriptionRepo.List(ctx, input)
+}
+
+func (s *service) ExpandViews(ctx context.Context, subs []subscription.Subscription) ([]subscription.SubscriptionView, error) {
+	ctx = subscription.NewSubscriptionOperationContext(ctx)
+
+	if len(subs) == 0 {
+		return nil, nil
+	}
+
+	// If we have multiple customer ids, we can't expand the views
+	if len(lo.Uniq(slicesx.Map(subs, func(s subscription.Subscription) string {
+		return s.CustomerId
+	}))) != 1 {
+		return nil, fmt.Errorf("ExpandViews only supports a single customer id for now")
+	}
+
+	customerID := subs[0].CustomerId
+
+	cus, err := s.CustomerService.GetCustomer(ctx, customer.GetCustomerInput{
+		CustomerID: &customer.CustomerID{
+			Namespace: subs[0].Namespace,
+			ID:        customerID,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get customer: %w", err)
+	}
+
+	if cus == nil {
+		return nil, fmt.Errorf("customer is nil")
+	}
+
+	now := clock.Now()
+
+	getAtInputs := slicesx.Map(subs, func(s subscription.Subscription) subscription.GetForSubscriptionAtInput {
+		return subscription.GetForSubscriptionAtInput{
+			Namespace:      s.Namespace,
+			SubscriptionID: s.ID,
+			At:             now,
+		}
+	})
+
+	phases, err := s.SubscriptionPhaseRepo.GetForSubscriptionsAt(ctx, getAtInputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get phases: %w", err)
+	}
+
+	items, err := s.SubscriptionItemRepo.GetForSubscriptionsAt(ctx, getAtInputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get items: %w", err)
+	}
+
+	ents, err := s.EntitlementAdapter.GetForSubscriptionsAt(ctx, getAtInputs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get entitlements: %w", err)
+	}
+
+	var featsOfEnts pagination.Result[feature.Feature]
+
+	{
+		uniqFeatureIDs := lo.Uniq(slicesx.Map(ents, func(e subscription.SubscriptionEntitlement) string {
+			return e.Entitlement.FeatureID
+		}))
+
+		if len(uniqFeatureIDs) > 0 {
+			featsOfEnts, err = s.FeatureService.ListFeatures(ctx, feature.ListFeaturesParams{
+				Namespace:       cus.Namespace,
+				IncludeArchived: true,
+				IDsOrKeys:       uniqFeatureIDs,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get features of entitlements: %w", err)
+			}
+		}
+	}
+
+	var featsOfItems pagination.Result[feature.Feature]
+
+	{
+		itemsWithFeatures := lo.Filter(items, func(i subscription.SubscriptionItem, _ int) bool {
+			return i.RateCard.AsMeta().FeatureKey != nil
+		})
+
+		uniqFeatureKeys := lo.Uniq(slicesx.Map(itemsWithFeatures, func(i subscription.SubscriptionItem) string {
+			return lo.FromPtr(i.RateCard.AsMeta().FeatureKey)
+		}))
+
+		if len(uniqFeatureKeys) > 0 {
+			featsOfItems, err = s.FeatureService.ListFeatures(ctx, feature.ListFeaturesParams{
+				Namespace:       cus.Namespace,
+				IncludeArchived: true,
+				IDsOrKeys:       uniqFeatureKeys,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to get features of items: %w", err)
+			}
+		}
+	}
+
+	phasesBySub := lo.GroupBy(phases, func(p subscription.SubscriptionPhase) string {
+		return p.SubscriptionID
+	})
+
+	if diff := numNotGrouped(phases, phasesBySub); diff > 0 {
+		return nil, fmt.Errorf("%d phases are not grouped by subscription id", diff)
+	}
+
+	itemsBySub := lo.GroupBy(items, func(i subscription.SubscriptionItem) string {
+		phase, ok := lo.Find(phases, func(p subscription.SubscriptionPhase) bool {
+			return p.ID == i.PhaseId
+		})
+		if !ok {
+			return ""
+		}
+
+		return phase.SubscriptionID
+	})
+
+	if diff := numNotGrouped(items, itemsBySub); diff > 0 {
+		return nil, fmt.Errorf("%d items are not grouped by subscription id", diff)
+	}
+
+	entsBySub := lo.MapEntries(itemsBySub, func(key string, items []subscription.SubscriptionItem) (string, []subscription.SubscriptionEntitlement) {
+		found := make([]subscription.SubscriptionEntitlement, 0)
+		for _, item := range items {
+			if item.EntitlementID == nil {
+				continue
+			}
+
+			ent, ok := lo.Find(ents, func(e subscription.SubscriptionEntitlement) bool {
+				return e.Entitlement.ID == *item.EntitlementID
+			})
+			if ok {
+				found = append(found, ent)
+			}
+		}
+
+		return key, found
+	})
+
+	if diff := numNotGrouped(ents, entsBySub); diff > 0 {
+		return nil, fmt.Errorf("%d entitlements are not grouped by subscription id", diff)
+	}
+
+	featsOfEntsBySub := lo.MapEntries(entsBySub, func(key string, ents []subscription.SubscriptionEntitlement) (string, []feature.Feature) {
+		found := make([]feature.Feature, 0)
+		for _, ent := range ents {
+			feat, ok := lo.Find(featsOfEnts.Items, func(f feature.Feature) bool {
+				return f.ID == ent.Entitlement.FeatureID
+			})
+			if ok {
+				found = append(found, feat)
+			}
+		}
+
+		return key, found
+	})
+
+	if diff := numNotGrouped(featsOfEnts.Items, featsOfEntsBySub); diff > 0 {
+		return nil, fmt.Errorf("%d features of entitlements are not grouped by subscription id", diff)
+	}
+
+	featsOfItemsBySub := lo.MapEntries(itemsBySub, func(key string, items []subscription.SubscriptionItem) (string, []feature.Feature) {
+		found := make([]feature.Feature, 0)
+		for _, item := range items {
+			if item.RateCard.AsMeta().FeatureKey == nil {
+				continue
+			}
+
+			feat, ok := lo.Find(featsOfItems.Items, func(f feature.Feature) bool {
+				return f.Key == lo.FromPtr(item.RateCard.AsMeta().FeatureKey)
+			})
+			if ok {
+				found = append(found, feat)
+			}
+		}
+
+		return key, found
+	})
+
+	return slicesx.MapWithErr(subs, func(s subscription.Subscription) (subscription.SubscriptionView, error) {
+		view, err := subscription.NewSubscriptionView(s, lo.FromPtr(cus),
+			phasesBySub[s.ID],
+			itemsBySub[s.ID],
+			entsBySub[s.ID],
+			featsOfEntsBySub[s.ID],
+			featsOfItemsBySub[s.ID],
+		)
+
+		return lo.FromPtr(view), err
+	})
 }
 
 func (s *service) updateCustomerCurrencyIfNotSet(ctx context.Context, sub subscription.Subscription, currentSpec subscription.SubscriptionSpec) error {

@@ -30,7 +30,7 @@ func (c IngestConfiguration) Validate() error {
 type KafkaIngestConfiguration struct {
 	KafkaConfiguration `mapstructure:",squash"`
 
-	TopicProvisionerConfig `mapstructure:",squash"`
+	TopicProvisioner TopicProvisionerConfig
 
 	Partitions          int
 	EventsTopicTemplate string
@@ -51,7 +51,7 @@ func (c KafkaIngestConfiguration) Validate() error {
 		errs = append(errs, err)
 	}
 
-	if err := c.TopicProvisionerConfig.Validate(); err != nil {
+	if err := c.TopicProvisioner.Validate(); err != nil {
 		errs = append(errs, err)
 	}
 
@@ -160,16 +160,26 @@ func (c KafkaConfiguration) CreateKafkaConfig() kafka.ConfigMap {
 	return config
 }
 
+func ConfigureIngestKafkaConfiguration(v *viper.Viper, prefixes ...string) {
+	prefixer := NewViperKeyPrefixer(prefixes...)
+
+	v.SetDefault(prefixer("kafka.broker"), "127.0.0.1:29092")
+	v.SetDefault(prefixer("kafka.securityProtocol"), "")
+	v.SetDefault(prefixer("kafka.saslMechanisms"), "")
+	v.SetDefault(prefixer("kafka.saslUsername"), "")
+	v.SetDefault(prefixer("kafka.saslPassword"), "")
+	v.SetDefault(prefixer("kafka.statsInterval"), 15*time.Second)
+	v.SetDefault(prefixer("kafka.brokerAddressFamily"), "v4")
+	v.SetDefault(prefixer("kafka.socketKeepAliveEnabled"), true)
+	v.SetDefault(prefixer("kafka.topicMetadataRefreshInterval"), time.Minute)
+}
+
 // Configure configures some defaults in the Viper instance.
 func ConfigureIngest(v *viper.Viper) {
-	v.SetDefault("ingest.kafka.broker", "127.0.0.1:29092")
-	v.SetDefault("ingest.kafka.securityProtocol", "")
-	v.SetDefault("ingest.kafka.saslMechanisms", "")
-	v.SetDefault("ingest.kafka.saslUsername", "")
-	v.SetDefault("ingest.kafka.saslPassword", "")
 	v.SetDefault("ingest.kafka.partitions", 1)
 	v.SetDefault("ingest.kafka.eventsTopicTemplate", "om_%s_events")
 	v.SetDefault("ingest.kafka.namespaceDeletionEnabled", false)
 
-	ConfigureTopicProvisioner(v, "ingest", "kafka")
+	ConfigureIngestKafkaConfiguration(v, "ingest")
+	ConfigureTopicProvisioner(v, "ingest", "kafka", "topicProvisioner")
 }

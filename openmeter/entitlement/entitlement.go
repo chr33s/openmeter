@@ -1,6 +1,7 @@
 package entitlement
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/streaming"
-	"github.com/openmeterio/openmeter/openmeter/subject"
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/datetime"
 	"github.com/openmeterio/openmeter/pkg/defaultx"
@@ -95,7 +95,7 @@ type CreateEntitlementInputs struct {
 	IssueAfterReset         *float64               `json:"issueAfterReset,omitempty"`
 	IssueAfterResetPriority *uint8                 `json:"issueAfterResetPriority,omitempty"`
 	IsSoftLimit             *bool                  `json:"isSoftLimit,omitempty"`
-	Config                  []byte                 `json:"config,omitempty"`
+	Config                  *string                `json:"config,omitempty"`
 	UsagePeriod             *UsagePeriodInput      `json:"usagePeriod,omitempty"`
 	PreserveOverageAtReset  *bool                  `json:"preserveOverageAtReset,omitempty"`
 
@@ -195,12 +195,8 @@ func (c CreateEntitlementInputs) Validate() error {
 		return fmt.Errorf("feature id or key must be set")
 	}
 
-	if c.UsageAttribution.ID == "" {
-		return fmt.Errorf("usage attribution must have an id")
-	}
-
-	if len(c.UsageAttribution.SubjectKeys) == 0 {
-		return fmt.Errorf("usage attribution must have at least one subject key")
+	if err := c.UsageAttribution.Validate(); err != nil {
+		return err
 	}
 
 	// Let's validate the Scheduling Params
@@ -219,6 +215,16 @@ func (c CreateEntitlementInputs) Validate() error {
 	if c.UsagePeriod != nil {
 		if per, err := c.UsagePeriod.GetValue().Interval.ISODuration.Subtract(datetime.DurationHour); err == nil && per.Sign() == -1 {
 			return fmt.Errorf("UsagePeriod must be at least 1 hour")
+		}
+	}
+
+	if c.EntitlementType == EntitlementTypeStatic {
+		if c.Config == nil {
+			return fmt.Errorf("config is required for static entitlements")
+		}
+
+		if !json.Valid([]byte(*c.Config)) {
+			return fmt.Errorf("invalid JSON config")
 		}
 	}
 
@@ -243,7 +249,7 @@ type Entitlement struct {
 	PreserveOverageAtReset  *bool      `json:"preserveOverageAtReset,omitempty"`
 
 	// static
-	Config []byte `json:"config,omitempty"`
+	Config *string `json:"config,omitempty"`
 }
 
 func (e Entitlement) AsCreateEntitlementInputs() CreateEntitlementInputs {
@@ -302,6 +308,15 @@ func (e Entitlement) GetType() EntitlementType {
 	return e.EntitlementType
 }
 
+var _ models.CadenceComparable = Entitlement{}
+
+func (e Entitlement) GetCadence() models.CadencedModel {
+	return models.CadencedModel{
+		ActiveFrom: e.ActiveFromTime(),
+		ActiveTo:   e.ActiveToTime(),
+	}
+}
+
 type EntitlementType string
 
 const (
@@ -345,9 +360,7 @@ type GenericProperties struct {
 	FeatureID  string `json:"featureId,omitempty"`
 	FeatureKey string `json:"featureKey,omitempty"`
 
-	SubjectKey string             `json:"subjectKey,omitempty"`
-	Subject    subject.Subject    `json:"subject,omitempty"`
-	Customer   *customer.Customer `json:"customer,omitempty"`
+	Customer *customer.Customer `json:"customer,omitempty"`
 
 	EntitlementType           EntitlementType        `json:"type,omitempty"`
 	UsagePeriod               *UsagePeriod           `json:"usagePeriod,omitempty"`
@@ -357,6 +370,10 @@ type GenericProperties struct {
 
 func (e GenericProperties) Validate() error {
 	// TODO: there are no clear validation requirements now but lets implement the interface
+	if e.Customer == nil {
+		return fmt.Errorf("customer is required")
+	}
+
 	return nil
 }
 

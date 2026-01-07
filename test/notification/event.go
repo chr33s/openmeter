@@ -197,7 +197,7 @@ func (s *EventTestSuite) Setup(ctx context.Context, t *testing.T) {
 			Key:                 TestFeatureKey,
 			Namespace:           s.Env.Namespace(),
 			MeterSlug:           convert.ToPointer(m.Key),
-			MeterGroupByFilters: m.GroupBy,
+			MeterGroupByFilters: feature.ConvertMapStringToMeterGroupByFilters(m.GroupBy),
 		})
 	}
 	require.NoError(t, err, "Creating feature must not return error")
@@ -245,10 +245,8 @@ func (s *EventTestSuite) TestGetEvent(ctx context.Context, t *testing.T) {
 	require.NotNil(t, event, "Rule must not be nil")
 
 	event2, err := service.GetEvent(ctx, notification.GetEventInput{
-		NamespacedID: models.NamespacedID{
-			Namespace: event.Namespace,
-			ID:        event.ID,
-		},
+		Namespace: event.Namespace,
+		ID:        event.ID,
 	})
 	require.NoError(t, err, "Creating rule must not return error")
 	require.NotNil(t, event2, "Rule must not be nil")
@@ -343,22 +341,14 @@ func (s *EventTestSuite) TestUpdateDeliveryStatus(ctx context.Context, t *testin
 		{
 			Name: "WithID",
 			Input: notification.UpdateEventDeliveryStatusInput{
-				NamespacedModel: models.NamespacedModel{
+				NamespacedID: models.NamespacedID{
 					Namespace: event.Namespace,
+					ID:        event.DeliveryStatus[0].ID,
 				},
-				ID:    event.DeliveryStatus[0].ID,
 				State: notification.EventDeliveryStatusStateFailed,
-			},
-		},
-		{
-			Name: "WithEventIDAndChannelID",
-			Input: notification.UpdateEventDeliveryStatusInput{
-				NamespacedModel: models.NamespacedModel{
-					Namespace: event.Namespace,
+				Annotations: models.Annotations{
+					"state": string(notification.EventDeliveryStatusStateFailed),
 				},
-				EventID:   event.ID,
-				ChannelID: event.Rule.Channels[0].ID,
-				State:     notification.EventDeliveryStatusStateSuccess,
 			},
 		},
 	}
@@ -368,6 +358,9 @@ func (s *EventTestSuite) TestUpdateDeliveryStatus(ctx context.Context, t *testin
 			status, err := service.UpdateEventDeliveryStatus(ctx, test.Input)
 			require.NoError(t, err, "Updating notification event delivery status must not return error")
 			require.NotNil(t, status, "Notification event must not be nil")
+
+			assert.Equalf(t, test.Input.State, status.State, "Unexpected state returned by updating notification event delivery status")
+			assert.Equalf(t, test.Input.Annotations, status.Annotations, "Unexpected annotations returned by updating notification event delivery status")
 		})
 	}
 }

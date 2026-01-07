@@ -15,9 +15,8 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/ent/db/balancesnapshot"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/entitlement"
-	"github.com/openmeterio/openmeter/openmeter/ent/db/feature"
+	dbfeature "github.com/openmeterio/openmeter/openmeter/ent/db/feature"
 	dbgrant "github.com/openmeterio/openmeter/openmeter/ent/db/grant"
-	"github.com/openmeterio/openmeter/openmeter/ent/db/subject"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionitem"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/usagereset"
 	"github.com/openmeterio/openmeter/pkg/datetime"
@@ -138,18 +137,6 @@ func (_c *EntitlementCreate) SetCustomerID(v string) *EntitlementCreate {
 	return _c
 }
 
-// SetSubjectID sets the "subject_id" field.
-func (_c *EntitlementCreate) SetSubjectID(v string) *EntitlementCreate {
-	_c.mutation.SetSubjectID(v)
-	return _c
-}
-
-// SetSubjectKey sets the "subject_key" field.
-func (_c *EntitlementCreate) SetSubjectKey(v string) *EntitlementCreate {
-	_c.mutation.SetSubjectKey(v)
-	return _c
-}
-
 // SetMeasureUsageFrom sets the "measure_usage_from" field.
 func (_c *EntitlementCreate) SetMeasureUsageFrom(v time.Time) *EntitlementCreate {
 	_c.mutation.SetMeasureUsageFrom(v)
@@ -221,8 +208,16 @@ func (_c *EntitlementCreate) SetNillablePreserveOverageAtReset(v *bool) *Entitle
 }
 
 // SetConfig sets the "config" field.
-func (_c *EntitlementCreate) SetConfig(v []uint8) *EntitlementCreate {
+func (_c *EntitlementCreate) SetConfig(v string) *EntitlementCreate {
 	_c.mutation.SetConfig(v)
+	return _c
+}
+
+// SetNillableConfig sets the "config" field if the given value is not nil.
+func (_c *EntitlementCreate) SetNillableConfig(v *string) *EntitlementCreate {
+	if v != nil {
+		_c.SetConfig(*v)
+	}
 	return _c
 }
 
@@ -372,11 +367,6 @@ func (_c *EntitlementCreate) SetCustomer(v *Customer) *EntitlementCreate {
 	return _c.SetCustomerID(v.ID)
 }
 
-// SetSubject sets the "subject" edge to the Subject entity.
-func (_c *EntitlementCreate) SetSubject(v *Subject) *EntitlementCreate {
-	return _c.SetSubjectID(v.ID)
-}
-
 // Mutation returns the EntitlementMutation object of the builder.
 func (_c *EntitlementCreate) Mutation() *EntitlementMutation {
 	return _c.mutation
@@ -464,25 +454,11 @@ func (_c *EntitlementCreate) check() error {
 	if _, ok := _c.mutation.CustomerID(); !ok {
 		return &ValidationError{Name: "customer_id", err: errors.New(`db: missing required field "Entitlement.customer_id"`)}
 	}
-	if _, ok := _c.mutation.SubjectID(); !ok {
-		return &ValidationError{Name: "subject_id", err: errors.New(`db: missing required field "Entitlement.subject_id"`)}
-	}
-	if _, ok := _c.mutation.SubjectKey(); !ok {
-		return &ValidationError{Name: "subject_key", err: errors.New(`db: missing required field "Entitlement.subject_key"`)}
-	}
-	if v, ok := _c.mutation.SubjectKey(); ok {
-		if err := entitlement.SubjectKeyValidator(v); err != nil {
-			return &ValidationError{Name: "subject_key", err: fmt.Errorf(`db: validator failed for field "Entitlement.subject_key": %w`, err)}
-		}
-	}
 	if len(_c.mutation.FeatureIDs()) == 0 {
 		return &ValidationError{Name: "feature", err: errors.New(`db: missing required edge "Entitlement.feature"`)}
 	}
 	if len(_c.mutation.CustomerIDs()) == 0 {
 		return &ValidationError{Name: "customer", err: errors.New(`db: missing required edge "Entitlement.customer"`)}
-	}
-	if len(_c.mutation.SubjectIDs()) == 0 {
-		return &ValidationError{Name: "subject", err: errors.New(`db: missing required edge "Entitlement.subject"`)}
 	}
 	return nil
 }
@@ -559,10 +535,6 @@ func (_c *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec, e
 		_spec.SetField(entitlement.FieldFeatureKey, field.TypeString, value)
 		_node.FeatureKey = value
 	}
-	if value, ok := _c.mutation.SubjectKey(); ok {
-		_spec.SetField(entitlement.FieldSubjectKey, field.TypeString, value)
-		_node.SubjectKey = value
-	}
 	if value, ok := _c.mutation.MeasureUsageFrom(); ok {
 		_spec.SetField(entitlement.FieldMeasureUsageFrom, field.TypeTime, value)
 		_node.MeasureUsageFrom = &value
@@ -584,8 +556,8 @@ func (_c *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec, e
 		_node.PreserveOverageAtReset = &value
 	}
 	if value, ok := _c.mutation.Config(); ok {
-		_spec.SetField(entitlement.FieldConfig, field.TypeJSON, value)
-		_node.Config = value
+		_spec.SetField(entitlement.FieldConfig, field.TypeString, value)
+		_node.Config = &value
 	}
 	if value, ok := _c.mutation.UsagePeriodInterval(); ok {
 		_spec.SetField(entitlement.FieldUsagePeriodInterval, field.TypeString, value)
@@ -683,7 +655,7 @@ func (_c *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec, e
 			Columns: []string{entitlement.FeatureColumn},
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(feature.FieldID, field.TypeString),
+				IDSpec: sqlgraph.NewFieldSpec(dbfeature.FieldID, field.TypeString),
 			},
 		}
 		for _, k := range nodes {
@@ -707,23 +679,6 @@ func (_c *EntitlementCreate) createSpec() (*Entitlement, *sqlgraph.CreateSpec, e
 			edge.Target.Nodes = append(edge.Target.Nodes, k)
 		}
 		_node.CustomerID = nodes[0]
-		_spec.Edges = append(_spec.Edges, edge)
-	}
-	if nodes := _c.mutation.SubjectIDs(); len(nodes) > 0 {
-		edge := &sqlgraph.EdgeSpec{
-			Rel:     sqlgraph.M2O,
-			Inverse: true,
-			Table:   entitlement.SubjectTable,
-			Columns: []string{entitlement.SubjectColumn},
-			Bidi:    false,
-			Target: &sqlgraph.EdgeTarget{
-				IDSpec: sqlgraph.NewFieldSpec(subject.FieldID, field.TypeString),
-			},
-		}
-		for _, k := range nodes {
-			edge.Target.Nodes = append(edge.Target.Nodes, k)
-		}
-		_node.SubjectID = nodes[0]
 		_spec.Edges = append(_spec.Edges, edge)
 	}
 	return _node, _spec, nil
@@ -845,7 +800,7 @@ func (u *EntitlementUpsert) ClearActiveTo() *EntitlementUpsert {
 }
 
 // SetConfig sets the "config" field.
-func (u *EntitlementUpsert) SetConfig(v []uint8) *EntitlementUpsert {
+func (u *EntitlementUpsert) SetConfig(v string) *EntitlementUpsert {
 	u.Set(entitlement.FieldConfig, v)
 	return u
 }
@@ -971,12 +926,6 @@ func (u *EntitlementUpsertOne) UpdateNewValues() *EntitlementUpsertOne {
 		}
 		if _, exists := u.create.mutation.CustomerID(); exists {
 			s.SetIgnore(entitlement.FieldCustomerID)
-		}
-		if _, exists := u.create.mutation.SubjectID(); exists {
-			s.SetIgnore(entitlement.FieldSubjectID)
-		}
-		if _, exists := u.create.mutation.SubjectKey(); exists {
-			s.SetIgnore(entitlement.FieldSubjectKey)
 		}
 		if _, exists := u.create.mutation.MeasureUsageFrom(); exists {
 			s.SetIgnore(entitlement.FieldMeasureUsageFrom)
@@ -1105,7 +1054,7 @@ func (u *EntitlementUpsertOne) ClearActiveTo() *EntitlementUpsertOne {
 }
 
 // SetConfig sets the "config" field.
-func (u *EntitlementUpsertOne) SetConfig(v []uint8) *EntitlementUpsertOne {
+func (u *EntitlementUpsertOne) SetConfig(v string) *EntitlementUpsertOne {
 	return u.Update(func(s *EntitlementUpsert) {
 		s.SetConfig(v)
 	})
@@ -1416,12 +1365,6 @@ func (u *EntitlementUpsertBulk) UpdateNewValues() *EntitlementUpsertBulk {
 			if _, exists := b.mutation.CustomerID(); exists {
 				s.SetIgnore(entitlement.FieldCustomerID)
 			}
-			if _, exists := b.mutation.SubjectID(); exists {
-				s.SetIgnore(entitlement.FieldSubjectID)
-			}
-			if _, exists := b.mutation.SubjectKey(); exists {
-				s.SetIgnore(entitlement.FieldSubjectKey)
-			}
 			if _, exists := b.mutation.MeasureUsageFrom(); exists {
 				s.SetIgnore(entitlement.FieldMeasureUsageFrom)
 			}
@@ -1550,7 +1493,7 @@ func (u *EntitlementUpsertBulk) ClearActiveTo() *EntitlementUpsertBulk {
 }
 
 // SetConfig sets the "config" field.
-func (u *EntitlementUpsertBulk) SetConfig(v []uint8) *EntitlementUpsertBulk {
+func (u *EntitlementUpsertBulk) SetConfig(v string) *EntitlementUpsertBulk {
 	return u.Update(func(s *EntitlementUpsert) {
 		s.SetConfig(v)
 	})

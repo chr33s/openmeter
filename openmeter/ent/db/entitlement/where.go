@@ -111,16 +111,6 @@ func CustomerID(v string) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldEQ(FieldCustomerID, v))
 }
 
-// SubjectID applies equality check predicate on the "subject_id" field. It's identical to SubjectIDEQ.
-func SubjectID(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldEQ(FieldSubjectID, v))
-}
-
-// SubjectKey applies equality check predicate on the "subject_key" field. It's identical to SubjectKeyEQ.
-func SubjectKey(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldEQ(FieldSubjectKey, v))
-}
-
 // MeasureUsageFrom applies equality check predicate on the "measure_usage_from" field. It's identical to MeasureUsageFromEQ.
 func MeasureUsageFrom(v time.Time) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldEQ(FieldMeasureUsageFrom, v))
@@ -144,6 +134,11 @@ func IsSoftLimit(v bool) predicate.Entitlement {
 // PreserveOverageAtReset applies equality check predicate on the "preserve_overage_at_reset" field. It's identical to PreserveOverageAtResetEQ.
 func PreserveOverageAtReset(v bool) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldEQ(FieldPreserveOverageAtReset, v))
+}
+
+// Config applies equality check predicate on the "config" field. It's identical to ConfigEQ.
+func Config(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldEQ(FieldConfig, v))
 }
 
 // UsagePeriodInterval applies equality check predicate on the "usage_period_interval" field. It's identical to UsagePeriodIntervalEQ.
@@ -687,136 +682,6 @@ func CustomerIDContainsFold(v string) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldContainsFold(FieldCustomerID, v))
 }
 
-// SubjectIDEQ applies the EQ predicate on the "subject_id" field.
-func SubjectIDEQ(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldEQ(FieldSubjectID, v))
-}
-
-// SubjectIDNEQ applies the NEQ predicate on the "subject_id" field.
-func SubjectIDNEQ(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldNEQ(FieldSubjectID, v))
-}
-
-// SubjectIDIn applies the In predicate on the "subject_id" field.
-func SubjectIDIn(vs ...string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldIn(FieldSubjectID, vs...))
-}
-
-// SubjectIDNotIn applies the NotIn predicate on the "subject_id" field.
-func SubjectIDNotIn(vs ...string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldNotIn(FieldSubjectID, vs...))
-}
-
-// SubjectIDGT applies the GT predicate on the "subject_id" field.
-func SubjectIDGT(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldGT(FieldSubjectID, v))
-}
-
-// SubjectIDGTE applies the GTE predicate on the "subject_id" field.
-func SubjectIDGTE(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldGTE(FieldSubjectID, v))
-}
-
-// SubjectIDLT applies the LT predicate on the "subject_id" field.
-func SubjectIDLT(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldLT(FieldSubjectID, v))
-}
-
-// SubjectIDLTE applies the LTE predicate on the "subject_id" field.
-func SubjectIDLTE(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldLTE(FieldSubjectID, v))
-}
-
-// SubjectIDContains applies the Contains predicate on the "subject_id" field.
-func SubjectIDContains(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldContains(FieldSubjectID, v))
-}
-
-// SubjectIDHasPrefix applies the HasPrefix predicate on the "subject_id" field.
-func SubjectIDHasPrefix(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldHasPrefix(FieldSubjectID, v))
-}
-
-// SubjectIDHasSuffix applies the HasSuffix predicate on the "subject_id" field.
-func SubjectIDHasSuffix(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldHasSuffix(FieldSubjectID, v))
-}
-
-// SubjectIDEqualFold applies the EqualFold predicate on the "subject_id" field.
-func SubjectIDEqualFold(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldEqualFold(FieldSubjectID, v))
-}
-
-// SubjectIDContainsFold applies the ContainsFold predicate on the "subject_id" field.
-func SubjectIDContainsFold(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldContainsFold(FieldSubjectID, v))
-}
-
-// SubjectKeyEQ applies the EQ predicate on the "subject_key" field.
-func SubjectKeyEQ(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldEQ(FieldSubjectKey, v))
-}
-
-// SubjectKeyNEQ applies the NEQ predicate on the "subject_key" field.
-func SubjectKeyNEQ(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldNEQ(FieldSubjectKey, v))
-}
-
-// SubjectKeyIn applies the In predicate on the "subject_key" field.
-func SubjectKeyIn(vs ...string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldIn(FieldSubjectKey, vs...))
-}
-
-// SubjectKeyNotIn applies the NotIn predicate on the "subject_key" field.
-func SubjectKeyNotIn(vs ...string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldNotIn(FieldSubjectKey, vs...))
-}
-
-// SubjectKeyGT applies the GT predicate on the "subject_key" field.
-func SubjectKeyGT(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldGT(FieldSubjectKey, v))
-}
-
-// SubjectKeyGTE applies the GTE predicate on the "subject_key" field.
-func SubjectKeyGTE(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldGTE(FieldSubjectKey, v))
-}
-
-// SubjectKeyLT applies the LT predicate on the "subject_key" field.
-func SubjectKeyLT(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldLT(FieldSubjectKey, v))
-}
-
-// SubjectKeyLTE applies the LTE predicate on the "subject_key" field.
-func SubjectKeyLTE(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldLTE(FieldSubjectKey, v))
-}
-
-// SubjectKeyContains applies the Contains predicate on the "subject_key" field.
-func SubjectKeyContains(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldContains(FieldSubjectKey, v))
-}
-
-// SubjectKeyHasPrefix applies the HasPrefix predicate on the "subject_key" field.
-func SubjectKeyHasPrefix(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldHasPrefix(FieldSubjectKey, v))
-}
-
-// SubjectKeyHasSuffix applies the HasSuffix predicate on the "subject_key" field.
-func SubjectKeyHasSuffix(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldHasSuffix(FieldSubjectKey, v))
-}
-
-// SubjectKeyEqualFold applies the EqualFold predicate on the "subject_key" field.
-func SubjectKeyEqualFold(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldEqualFold(FieldSubjectKey, v))
-}
-
-// SubjectKeyContainsFold applies the ContainsFold predicate on the "subject_key" field.
-func SubjectKeyContainsFold(v string) predicate.Entitlement {
-	return predicate.Entitlement(sql.FieldContainsFold(FieldSubjectKey, v))
-}
-
 // MeasureUsageFromEQ applies the EQ predicate on the "measure_usage_from" field.
 func MeasureUsageFromEQ(v time.Time) predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldEQ(FieldMeasureUsageFrom, v))
@@ -1007,6 +872,61 @@ func PreserveOverageAtResetNotNil() predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldNotNull(FieldPreserveOverageAtReset))
 }
 
+// ConfigEQ applies the EQ predicate on the "config" field.
+func ConfigEQ(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldEQ(FieldConfig, v))
+}
+
+// ConfigNEQ applies the NEQ predicate on the "config" field.
+func ConfigNEQ(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldNEQ(FieldConfig, v))
+}
+
+// ConfigIn applies the In predicate on the "config" field.
+func ConfigIn(vs ...string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldIn(FieldConfig, vs...))
+}
+
+// ConfigNotIn applies the NotIn predicate on the "config" field.
+func ConfigNotIn(vs ...string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldNotIn(FieldConfig, vs...))
+}
+
+// ConfigGT applies the GT predicate on the "config" field.
+func ConfigGT(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldGT(FieldConfig, v))
+}
+
+// ConfigGTE applies the GTE predicate on the "config" field.
+func ConfigGTE(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldGTE(FieldConfig, v))
+}
+
+// ConfigLT applies the LT predicate on the "config" field.
+func ConfigLT(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldLT(FieldConfig, v))
+}
+
+// ConfigLTE applies the LTE predicate on the "config" field.
+func ConfigLTE(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldLTE(FieldConfig, v))
+}
+
+// ConfigContains applies the Contains predicate on the "config" field.
+func ConfigContains(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldContains(FieldConfig, v))
+}
+
+// ConfigHasPrefix applies the HasPrefix predicate on the "config" field.
+func ConfigHasPrefix(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldHasPrefix(FieldConfig, v))
+}
+
+// ConfigHasSuffix applies the HasSuffix predicate on the "config" field.
+func ConfigHasSuffix(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldHasSuffix(FieldConfig, v))
+}
+
 // ConfigIsNil applies the IsNil predicate on the "config" field.
 func ConfigIsNil() predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldIsNull(FieldConfig))
@@ -1015,6 +935,16 @@ func ConfigIsNil() predicate.Entitlement {
 // ConfigNotNil applies the NotNil predicate on the "config" field.
 func ConfigNotNil() predicate.Entitlement {
 	return predicate.Entitlement(sql.FieldNotNull(FieldConfig))
+}
+
+// ConfigEqualFold applies the EqualFold predicate on the "config" field.
+func ConfigEqualFold(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldEqualFold(FieldConfig, v))
+}
+
+// ConfigContainsFold applies the ContainsFold predicate on the "config" field.
+func ConfigContainsFold(v string) predicate.Entitlement {
+	return predicate.Entitlement(sql.FieldContainsFold(FieldConfig, v))
 }
 
 // UsagePeriodIntervalEQ applies the EQ predicate on the "usage_period_interval" field.
@@ -1401,29 +1331,6 @@ func HasCustomer() predicate.Entitlement {
 func HasCustomerWith(preds ...predicate.Customer) predicate.Entitlement {
 	return predicate.Entitlement(func(s *sql.Selector) {
 		step := newCustomerStep()
-		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
-			for _, p := range preds {
-				p(s)
-			}
-		})
-	})
-}
-
-// HasSubject applies the HasEdge predicate on the "subject" edge.
-func HasSubject() predicate.Entitlement {
-	return predicate.Entitlement(func(s *sql.Selector) {
-		step := sqlgraph.NewStep(
-			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, true, SubjectTable, SubjectColumn),
-		)
-		sqlgraph.HasNeighbors(s, step)
-	})
-}
-
-// HasSubjectWith applies the HasEdge predicate on the "subject" edge with a given conditions (other predicates).
-func HasSubjectWith(preds ...predicate.Subject) predicate.Entitlement {
-	return predicate.Entitlement(func(s *sql.Selector) {
-		step := newSubjectStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

@@ -524,6 +524,12 @@ func (_u *BillingInvoiceUpdate) SetCustomerUsageAttribution(v *billing.Versioned
 	return _u
 }
 
+// ClearCustomerUsageAttribution clears the value of the "customer_usage_attribution" field.
+func (_u *BillingInvoiceUpdate) ClearCustomerUsageAttribution() *BillingInvoiceUpdate {
+	_u.mutation.ClearCustomerUsageAttribution()
+	return _u
+}
+
 // SetNumber sets the "number" field.
 func (_u *BillingInvoiceUpdate) SetNumber(v string) *BillingInvoiceUpdate {
 	_u.mutation.SetNumber(v)
@@ -860,6 +866,26 @@ func (_u *BillingInvoiceUpdate) ClearCollectionAt() *BillingInvoiceUpdate {
 	return _u
 }
 
+// SetPaymentProcessingEnteredAt sets the "payment_processing_entered_at" field.
+func (_u *BillingInvoiceUpdate) SetPaymentProcessingEnteredAt(v time.Time) *BillingInvoiceUpdate {
+	_u.mutation.SetPaymentProcessingEnteredAt(v)
+	return _u
+}
+
+// SetNillablePaymentProcessingEnteredAt sets the "payment_processing_entered_at" field if the given value is not nil.
+func (_u *BillingInvoiceUpdate) SetNillablePaymentProcessingEnteredAt(v *time.Time) *BillingInvoiceUpdate {
+	if v != nil {
+		_u.SetPaymentProcessingEnteredAt(*v)
+	}
+	return _u
+}
+
+// ClearPaymentProcessingEnteredAt clears the value of the "payment_processing_entered_at" field.
+func (_u *BillingInvoiceUpdate) ClearPaymentProcessingEnteredAt() *BillingInvoiceUpdate {
+	_u.mutation.ClearPaymentProcessingEnteredAt()
+	return _u
+}
+
 // SetBillingWorkflowConfigID sets the "billing_workflow_config" edge to the BillingWorkflowConfig entity by ID.
 func (_u *BillingInvoiceUpdate) SetBillingWorkflowConfigID(id string) *BillingInvoiceUpdate {
 	_u.mutation.SetBillingWorkflowConfigID(id)
@@ -1010,6 +1036,11 @@ func (_u *BillingInvoiceUpdate) check() error {
 	if v, ok := _u.mutation.CustomerName(); ok {
 		if err := billinginvoice.CustomerNameValidator(v); err != nil {
 			return &ValidationError{Name: "customer_name", err: fmt.Errorf(`db: validator failed for field "BillingInvoice.customer_name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.CustomerUsageAttribution(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "customer_usage_attribution", err: fmt.Errorf(`db: validator failed for field "BillingInvoice.customer_usage_attribution": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.GetType(); ok {
@@ -1196,6 +1227,9 @@ func (_u *BillingInvoiceUpdate) sqlSave(ctx context.Context) (_node int, err err
 	if value, ok := _u.mutation.CustomerUsageAttribution(); ok {
 		_spec.SetField(billinginvoice.FieldCustomerUsageAttribution, field.TypeJSON, value)
 	}
+	if _u.mutation.CustomerUsageAttributionCleared() {
+		_spec.ClearField(billinginvoice.FieldCustomerUsageAttribution, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.Number(); ok {
 		_spec.SetField(billinginvoice.FieldNumber, field.TypeString, value)
 	}
@@ -1288,6 +1322,12 @@ func (_u *BillingInvoiceUpdate) sqlSave(ctx context.Context) (_node int, err err
 	}
 	if _u.mutation.CollectionAtCleared() {
 		_spec.ClearField(billinginvoice.FieldCollectionAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.PaymentProcessingEnteredAt(); ok {
+		_spec.SetField(billinginvoice.FieldPaymentProcessingEnteredAt, field.TypeTime, value)
+	}
+	if _u.mutation.PaymentProcessingEnteredAtCleared() {
+		_spec.ClearField(billinginvoice.FieldPaymentProcessingEnteredAt, field.TypeTime)
 	}
 	if _u.mutation.BillingWorkflowConfigCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -1918,6 +1958,12 @@ func (_u *BillingInvoiceUpdateOne) SetCustomerUsageAttribution(v *billing.Versio
 	return _u
 }
 
+// ClearCustomerUsageAttribution clears the value of the "customer_usage_attribution" field.
+func (_u *BillingInvoiceUpdateOne) ClearCustomerUsageAttribution() *BillingInvoiceUpdateOne {
+	_u.mutation.ClearCustomerUsageAttribution()
+	return _u
+}
+
 // SetNumber sets the "number" field.
 func (_u *BillingInvoiceUpdateOne) SetNumber(v string) *BillingInvoiceUpdateOne {
 	_u.mutation.SetNumber(v)
@@ -2254,6 +2300,26 @@ func (_u *BillingInvoiceUpdateOne) ClearCollectionAt() *BillingInvoiceUpdateOne 
 	return _u
 }
 
+// SetPaymentProcessingEnteredAt sets the "payment_processing_entered_at" field.
+func (_u *BillingInvoiceUpdateOne) SetPaymentProcessingEnteredAt(v time.Time) *BillingInvoiceUpdateOne {
+	_u.mutation.SetPaymentProcessingEnteredAt(v)
+	return _u
+}
+
+// SetNillablePaymentProcessingEnteredAt sets the "payment_processing_entered_at" field if the given value is not nil.
+func (_u *BillingInvoiceUpdateOne) SetNillablePaymentProcessingEnteredAt(v *time.Time) *BillingInvoiceUpdateOne {
+	if v != nil {
+		_u.SetPaymentProcessingEnteredAt(*v)
+	}
+	return _u
+}
+
+// ClearPaymentProcessingEnteredAt clears the value of the "payment_processing_entered_at" field.
+func (_u *BillingInvoiceUpdateOne) ClearPaymentProcessingEnteredAt() *BillingInvoiceUpdateOne {
+	_u.mutation.ClearPaymentProcessingEnteredAt()
+	return _u
+}
+
 // SetBillingWorkflowConfigID sets the "billing_workflow_config" edge to the BillingWorkflowConfig entity by ID.
 func (_u *BillingInvoiceUpdateOne) SetBillingWorkflowConfigID(id string) *BillingInvoiceUpdateOne {
 	_u.mutation.SetBillingWorkflowConfigID(id)
@@ -2417,6 +2483,11 @@ func (_u *BillingInvoiceUpdateOne) check() error {
 	if v, ok := _u.mutation.CustomerName(); ok {
 		if err := billinginvoice.CustomerNameValidator(v); err != nil {
 			return &ValidationError{Name: "customer_name", err: fmt.Errorf(`db: validator failed for field "BillingInvoice.customer_name": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.CustomerUsageAttribution(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "customer_usage_attribution", err: fmt.Errorf(`db: validator failed for field "BillingInvoice.customer_usage_attribution": %w`, err)}
 		}
 	}
 	if v, ok := _u.mutation.GetType(); ok {
@@ -2620,6 +2691,9 @@ func (_u *BillingInvoiceUpdateOne) sqlSave(ctx context.Context) (_node *BillingI
 	if value, ok := _u.mutation.CustomerUsageAttribution(); ok {
 		_spec.SetField(billinginvoice.FieldCustomerUsageAttribution, field.TypeJSON, value)
 	}
+	if _u.mutation.CustomerUsageAttributionCleared() {
+		_spec.ClearField(billinginvoice.FieldCustomerUsageAttribution, field.TypeJSON)
+	}
 	if value, ok := _u.mutation.Number(); ok {
 		_spec.SetField(billinginvoice.FieldNumber, field.TypeString, value)
 	}
@@ -2712,6 +2786,12 @@ func (_u *BillingInvoiceUpdateOne) sqlSave(ctx context.Context) (_node *BillingI
 	}
 	if _u.mutation.CollectionAtCleared() {
 		_spec.ClearField(billinginvoice.FieldCollectionAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.PaymentProcessingEnteredAt(); ok {
+		_spec.SetField(billinginvoice.FieldPaymentProcessingEnteredAt, field.TypeTime, value)
+	}
+	if _u.mutation.PaymentProcessingEnteredAtCleared() {
+		_spec.ClearField(billinginvoice.FieldPaymentProcessingEnteredAt, field.TypeTime)
 	}
 	if _u.mutation.BillingWorkflowConfigCleared() {
 		edge := &sqlgraph.EdgeSpec{

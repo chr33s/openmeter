@@ -16,7 +16,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/billing"
 	"github.com/openmeterio/openmeter/openmeter/billing/worker/advance"
 	"github.com/openmeterio/openmeter/openmeter/billing/worker/collect"
-	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscription"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/reconciler"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
 	"github.com/openmeterio/openmeter/openmeter/meter"
@@ -30,6 +30,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/subject"
 	"github.com/openmeterio/openmeter/openmeter/watermill/driver/kafka"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/ffx"
 	"github.com/openmeterio/openmeter/pkg/kafka/metrics"
 	"go.opentelemetry.io/otel/metric"
 	"log/slog"
@@ -46,7 +47,8 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 	if err != nil {
 		return Application{}, nil, err
 	}
-	logger := common.NewLogger(logTelemetryConfig, resource, loggerProvider, commonMetadata)
+	v := common.TelemetryLoggerNoAdditionalMiddlewares()
+	logger := common.NewLogger(logTelemetryConfig, resource, loggerProvider, commonMetadata, v)
 	metricsTelemetryConfig := telemetryConfig.Metrics
 	meterProvider, cleanup2, err := common.NewMeterProvider(ctx, metricsTelemetryConfig, resource, logger)
 	if err != nil {
@@ -84,25 +86,14 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		Client: client,
 		Logger: logger,
 	}
-	appsConfiguration := conf.Apps
 	ingestConfiguration := conf.Ingest
 	kafkaIngestConfiguration := ingestConfiguration.Kafka
 	kafkaConfiguration := kafkaIngestConfiguration.KafkaConfiguration
 	brokerOptions := common.NewBrokerConfiguration(kafkaConfiguration, commonMetadata, logger, meter)
 	eventsConfiguration := conf.Events
-	v := common.ServerProvisionTopics(eventsConfiguration)
-	adminClient, err := common.NewKafkaAdminClient(kafkaConfiguration)
-	if err != nil {
-		cleanup5()
-		cleanup4()
-		cleanup3()
-		cleanup2()
-		cleanup()
-		return Application{}, nil, err
-	}
-	topicProvisionerConfig := kafkaIngestConfiguration.TopicProvisionerConfig
-	kafkaTopicProvisionerConfig := common.NewKafkaTopicProvisionerConfig(adminClient, logger, meter, topicProvisionerConfig)
-	topicProvisioner, err := common.NewKafkaTopicProvisioner(kafkaTopicProvisionerConfig)
+	v2 := common.ServerProvisionTopics(eventsConfiguration)
+	topicProvisionerConfig := kafkaIngestConfiguration.TopicProvisioner
+	topicProvisioner, err := common.NewKafkaTopicProvisioner(kafkaConfiguration, topicProvisionerConfig, logger, meter)
 	if err != nil {
 		cleanup5()
 		cleanup4()
@@ -113,7 +104,7 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 	}
 	publisherOptions := kafka.PublisherOptions{
 		Broker:           brokerOptions,
-		ProvisionTopics:  v,
+		ProvisionTopics:  v2,
 		TopicProvisioner: topicProvisioner,
 	}
 	publisher, cleanup6, err := common.NewServerPublisher(ctx, publisherOptions, logger)
@@ -135,7 +126,7 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	service, err := common.NewAppService(logger, client, appsConfiguration, eventbusPublisher)
+	service, err := common.NewAppService(logger, client, eventbusPublisher)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -145,11 +136,12 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
+	appsConfiguration := conf.Apps
 	tracer := common.NewTracer(tracerProvider, commonMetadata)
 	entitlementsConfiguration := conf.Entitlements
 	aggregationConfiguration := conf.Aggregation
 	clickHouseAggregationConfiguration := aggregationConfiguration.ClickHouse
-	v2, err := common.NewClickHouse(clickHouseAggregationConfiguration, tracer)
+	v3, err := common.NewClickHouse(clickHouseAggregationConfiguration, tracer)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -181,7 +173,7 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	connector, err := common.NewStreamingConnector(ctx, aggregationConfiguration, v2, logger, progressmanagerService, manager)
+	connector, err := common.NewStreamingConnector(ctx, aggregationConfiguration, v3, logger, progressmanagerService, manager)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -276,7 +268,8 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	subscriptionServiceWithWorkflow, err := common.NewSubscriptionServices(logger, client, featureConnector, entitlement, customerService, planService, planaddonService, addonService, eventbusPublisher, locker)
+	ffxService := ffx.NewContextService()
+	subscriptionServiceWithWorkflow, err := common.NewSubscriptionServices(logger, client, featureConnector, entitlement, customerService, planService, planaddonService, addonService, eventbusPublisher, locker, ffxService)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -287,7 +280,7 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		return Application{}, nil, err
 	}
 	billingFeatureSwitchesConfiguration := billingConfiguration.FeatureSwitches
-	billingService, err := common.BillingService(logger, service, billingAdapter, customerService, featureConnector, meterService, connector, eventbusPublisher, billingConfiguration, subscriptionServiceWithWorkflow, billingFeatureSwitchesConfiguration, tracer)
+	billingService, err := common.BillingService(logger, service, billingAdapter, customerService, featureConnector, meterService, connector, eventbusPublisher, billingConfiguration, subscriptionServiceWithWorkflow, client, billingFeatureSwitchesConfiguration, tracer)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -347,7 +340,7 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	handler, err := common.NewBillingSubscriptionHandler(logger, subscriptionServiceWithWorkflow, billingService, billingAdapter, tracer)
+	subscriptionsyncAdapter, err := common.NewBillingSubscriptionSyncAdapter(client)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -357,7 +350,17 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	reconciler, err := common.NewBillingSubscriptionReconciler(logger, subscriptionServiceWithWorkflow, handler, customerService)
+	subscriptionsyncService, err := common.NewBillingSubscriptionSyncService(logger, subscriptionServiceWithWorkflow, billingService, subscriptionsyncAdapter, tracer)
+	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return Application{}, nil, err
+	}
+	reconciler, err := common.NewBillingSubscriptionReconciler(logger, subscriptionServiceWithWorkflow, subscriptionsyncService, customerService)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -399,8 +402,8 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 	}
 	notificationConfiguration := conf.Notification
 	webhookConfiguration := notificationConfiguration.Webhook
-	v3 := conf.Svix
-	webhookHandler, err := common.NewNotificationWebhookHandler(logger, webhookConfiguration, v3)
+	v4 := conf.Svix
+	svix, err := common.NewSvixAPIClient(v4, meterProvider, tracerProvider)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -410,7 +413,7 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	eventHandler, cleanup7, err := common.NewNotificationEventHandler(logger, repository, webhookHandler)
+	handler, err := common.NewNotificationWebhookHandler(logger, tracer, webhookConfiguration, svix)
 	if err != nil {
 		cleanup6()
 		cleanup5()
@@ -420,7 +423,17 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		cleanup()
 		return Application{}, nil, err
 	}
-	notificationService, err := common.NewNotificationService(logger, repository, webhookHandler, eventHandler, featureConnector)
+	eventHandler, cleanup7, err := common.NewNotificationEventHandler(notificationConfiguration, logger, tracer, repository, handler)
+	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return Application{}, nil, err
+	}
+	notificationService, err := common.NewNotificationService(logger, repository, handler, eventHandler, featureConnector)
 	if err != nil {
 		cleanup7()
 		cleanup6()
@@ -505,7 +518,7 @@ type Application struct {
 	Billing                       billing.Service
 	BillingAutoAdvancer           *billingworkeradvance.AutoAdvancer
 	BillingCollector              *billingworkercollect.InvoiceCollector
-	BillingSubscriptionReconciler *billingworkersubscription.Reconciler
+	BillingSubscriptionReconciler *reconciler.Reconciler
 	EntClient                     *db.Client
 	EventPublisher                eventbus.Publisher
 	EntitlementRegistry           *registry.Entitlement

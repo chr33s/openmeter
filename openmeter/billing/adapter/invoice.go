@@ -13,11 +13,13 @@ import (
 	"github.com/openmeterio/openmeter/api"
 	"github.com/openmeterio/openmeter/openmeter/app"
 	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/billinginvoice"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/billinginvoiceline"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/billinginvoicevalidationissue"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
+	"github.com/openmeterio/openmeter/openmeter/streaming"
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/convert"
 	"github.com/openmeterio/openmeter/pkg/framework/entutils"
@@ -76,7 +78,7 @@ func (a *adapter) expandInvoiceLineItems(query *db.BillingInvoiceQuery, expand b
 			billinginvoiceline.StatusIn(requestedStatuses...),
 		)
 
-		a.expandLineItems(q)
+		a.expandLineItemsWithDetailedLines(q)
 	})
 }
 
@@ -306,10 +308,6 @@ func (a *adapter) CreateInvoice(ctx context.Context, input billing.CreateInvoice
 			// Customer snapshot about usage attribution fields
 			SetCustomerID(input.Customer.ID).
 			SetNillableCustomerKey(input.Customer.Key).
-			SetCustomerUsageAttribution(&billing.VersionedCustomerUsageAttribution{
-				Type:                     billing.CustomerUsageAttributionTypeVersion,
-				CustomerUsageAttribution: input.Customer.UsageAttribution,
-			}).
 			// Workflow (cloned)
 			SetBillingWorkflowConfigID(clonedWorkflowConfig.ID).
 			// TODO[later]: By cloning the AppIDs here we could support changing the apps in the billing profile if needed
@@ -333,12 +331,8 @@ func (a *adapter) CreateInvoice(ctx context.Context, input billing.CreateInvoice
 			SetNillableSupplierAddressLine2(supplier.Address.Line2).
 			SetNillableSupplierAddressPhoneNumber(supplier.Address.PhoneNumber).
 			SetSupplierName(supplier.Name).
-			SetNillableSupplierTaxCode(supplier.TaxCode)
-
-		// Set collection_at only for new gathering invoices
-		if input.Status == billing.InvoiceStatusGathering {
-			createMut = createMut.SetCollectionAt(clock.Now())
-		}
+			SetNillableSupplierTaxCode(supplier.TaxCode).
+			SetNillableCollectionAt(input.CollectionAt)
 
 		if customer.BillingAddress != nil {
 			createMut = createMut.
@@ -350,6 +344,9 @@ func (a *adapter) CreateInvoice(ctx context.Context, input billing.CreateInvoice
 				SetNillableCustomerAddressLine1(customer.BillingAddress.Line1).
 				SetNillableCustomerAddressLine2(customer.BillingAddress.Line2).
 				SetNillableCustomerAddressPhoneNumber(customer.BillingAddress.PhoneNumber)
+		}
+		if usageAttr := mapCustomerUsageAttributionToDB(input.Customer); usageAttr != nil {
+			createMut = createMut.SetCustomerUsageAttribution(usageAttr)
 		}
 		createMut = createMut.
 			SetCustomerName(customer.Name)
@@ -461,6 +458,7 @@ func (a *adapter) UpdateInvoice(ctx context.Context, in billing.UpdateInvoiceAda
 			SetOrClearDescription(in.Description).
 			SetOrClearDueAt(convert.SafeToUTC(in.DueAt)).
 			SetOrClearCollectionAt(convert.SafeToUTC(in.CollectionAt)).
+			SetOrClearPaymentProcessingEnteredAt(convert.SafeToUTC(in.PaymentProcessingEnteredAt)).
 			SetOrClearDraftUntil(convert.SafeToUTC(in.DraftUntil)).
 			SetOrClearIssuedAt(convert.SafeToUTC(in.IssuedAt)).
 			SetOrClearDeletedAt(convert.SafeToUTC(in.DeletedAt)).
@@ -570,17 +568,6 @@ func (a *adapter) UpdateInvoice(ctx context.Context, in billing.UpdateInvoiceAda
 			updatedLines = billing.NewInvoiceLines(lines)
 		}
 
-		// Let's return the updated invoice
-		if !in.ExpandedFields.DeletedLines && updatedLines.IsPresent() {
-			// If we haven't requested deleted lines, let's filter them out, as if there were lines marked deleted
-			// the adapter update would return them as well.
-			updatedLines = billing.NewInvoiceLines(
-				lo.Filter(updatedLines.OrEmpty(), func(line *billing.Line, _ int) bool {
-					return line.DeletedAt == nil
-				}),
-			)
-		}
-
 		// If we had just updated the lines, let's reuse that result, as it's quite an expensive operation
 		// to look up the lines again.
 		if in.ExpandedFields.Lines && updatedLines.IsPresent() {
@@ -686,7 +673,7 @@ func (a *adapter) mapInvoiceBaseFromDB(ctx context.Context, invoice *db.BillingI
 				Line2:       invoice.CustomerAddressLine2,
 				PhoneNumber: invoice.CustomerAddressPhoneNumber,
 			},
-			UsageAttribution: invoice.CustomerUsageAttribution.CustomerUsageAttribution,
+			UsageAttribution: mapCustomerUsageAttributionFromDB(invoice.CustomerID, invoice.CustomerKey, invoice.CustomerUsageAttribution),
 		},
 		Period:    mapPeriodFromDB(invoice.PeriodStart, invoice.PeriodEnd),
 		IssuedAt:  convert.TimePtrIn(invoice.IssuedAt, time.UTC),
@@ -694,7 +681,8 @@ func (a *adapter) mapInvoiceBaseFromDB(ctx context.Context, invoice *db.BillingI
 		UpdatedAt: invoice.UpdatedAt.In(time.UTC),
 		DeletedAt: convert.TimePtrIn(invoice.DeletedAt, time.UTC),
 
-		CollectionAt: lo.ToPtr(invoice.CollectionAt.In(time.UTC)),
+		CollectionAt:               lo.ToPtr(invoice.CollectionAt.In(time.UTC)),
+		PaymentProcessingEnteredAt: convert.TimePtrIn(invoice.PaymentProcessingEnteredAt, time.UTC),
 
 		ExternalIDs: billing.InvoiceExternalIDs{
 			Invoicing: lo.FromPtr(invoice.InvoicingAppExternalID),
@@ -748,10 +736,7 @@ func (a *adapter) mapInvoiceFromDB(ctx context.Context, invoice *db.BillingInvoi
 	}
 
 	if expand.Lines {
-		mappedLines, err := a.mapInvoiceLineFromDB(ctx, mapInvoiceLineFromDBInput{
-			lines:          invoice.Edges.BillingInvoiceLines,
-			includeDeleted: expand.DeletedLines,
-		})
+		mappedLines, err := a.mapInvoiceLineFromDB(invoice.Edges.BillingInvoiceLines)
 		if err != nil {
 			return billing.Invoice{}, err
 		}
@@ -791,6 +776,35 @@ func mapPeriodFromDB(start, end *time.Time) *billing.Period {
 	return &billing.Period{
 		Start: start.In(time.UTC),
 		End:   end.In(time.UTC),
+	}
+}
+
+func mapCustomerUsageAttributionFromDB(customerID string, customerKey *string, vua *billing.VersionedCustomerUsageAttribution) *streaming.CustomerUsageAttribution {
+	if vua == nil {
+		return nil
+	}
+
+	switch vua.Type {
+	case billing.CustomerUsageAttributionTypeVersionV1:
+		// For version 1, we backfill the usage attribution from the explicit fields
+		return lo.ToPtr(streaming.NewCustomerUsageAttribution(customerID, customerKey, vua.CustomerUsageAttribution.SubjectKeys))
+	case billing.CustomerUsageAttributionTypeVersionV2:
+		return &vua.CustomerUsageAttribution
+	default:
+		return nil
+	}
+}
+
+func mapCustomerUsageAttributionToDB(customer customer.Customer) *billing.VersionedCustomerUsageAttribution {
+	// We allow invoices without usage attribution, but we don't store them in the database.
+	// We only allow them when lines are not usage based.
+	if err := customer.GetUsageAttribution().Validate(); err != nil {
+		return nil
+	}
+
+	return &billing.VersionedCustomerUsageAttribution{
+		Type:                     billing.CustomerUsageAttributionTypeVersionV2,
+		CustomerUsageAttribution: customer.GetUsageAttribution(),
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/credit"
 	grantrepo "github.com/openmeterio/openmeter/openmeter/credit/adapter"
 	"github.com/openmeterio/openmeter/openmeter/credit/balance"
+	credithook "github.com/openmeterio/openmeter/openmeter/credit/hook"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
 	enttx "github.com/openmeterio/openmeter/openmeter/ent/tx"
@@ -44,6 +45,7 @@ import (
 	subscriptionworkflowservice "github.com/openmeterio/openmeter/openmeter/subscription/workflow/service"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
 	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/ffx"
 	"github.com/openmeterio/openmeter/pkg/framework/lockr"
 )
 
@@ -124,7 +126,10 @@ func (s *SubscriptionMixin) SetupSuite(t *testing.T, deps SubscriptionMixInDepen
 
 	s.EntitlementConnector = s.SetupEntitlements(t, deps)
 
-	s.SubscriptionService = subscriptionservice.New(subscriptionservice.ServiceConfig{
+	ffService := ffx.NewStaticService(ffx.AccessConfig{
+		subscription.MultiSubscriptionEnabledFF: true,
+	})
+	s.SubscriptionService, err = subscriptionservice.New(subscriptionservice.ServiceConfig{
 		SubscriptionRepo:      subsRepo,
 		SubscriptionPhaseRepo: subscriptionrepo.NewSubscriptionPhaseRepo(deps.DBClient),
 		SubscriptionItemRepo:  subsItemRepo,
@@ -140,9 +145,11 @@ func (s *SubscriptionMixin) SetupSuite(t *testing.T, deps SubscriptionMixInDepen
 		// framework
 		TransactionManager: subsRepo,
 		Lockr:              lockr,
+		FeatureFlags:       ffService,
 		// events
 		Publisher: publisher,
 	})
+	require.NoError(t, err)
 
 	addonRepo, err := addonrepo.New(addonrepo.Config{
 		Client: deps.DBClient,
@@ -200,6 +207,7 @@ func (s *SubscriptionMixin) SetupSuite(t *testing.T, deps SubscriptionMixInDepen
 		TransactionManager: subsRepo,
 		Logger:             slog.Default(),
 		Lockr:              lockr,
+		FeatureFlags:       ffService,
 	})
 }
 
@@ -287,6 +295,7 @@ func (s *SubscriptionMixin) SetupEntitlements(t *testing.T, deps SubscriptionMix
 
 	service.RegisterHooks(
 		entitlementsubscriptionhook.NewEntitlementSubscriptionHook(entitlementsubscriptionhook.EntitlementSubscriptionHookConfig{}),
+		credithook.NewEntitlementHook(grantRepo),
 	)
 
 	return service

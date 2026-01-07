@@ -18,6 +18,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/testutils"
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/convert"
+	"github.com/openmeterio/openmeter/pkg/filter"
 	"github.com/openmeterio/openmeter/pkg/models"
 	"github.com/openmeterio/openmeter/pkg/timeutil"
 )
@@ -31,7 +32,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 		Name:                "feature1",
 		Key:                 "feature1",
 		MeterSlug:           &meterSlug,
-		MeterGroupByFilters: map[string]string{},
+		MeterGroupByFilters: map[string]filter.FilterString{},
 	}
 
 	getEntitlement := func(t *testing.T, feature feature.Feature, usageAttribution streaming.CustomerUsageAttribution) entitlement.CreateEntitlementRepoInputs {
@@ -230,7 +231,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:      1000,
 					Priority:    1,
 					EffectiveAt: startTime.Add(time.Hour * 2),
-					ExpiresAt:   startTime.AddDate(0, 0, 3),
+					ExpiresAt:   lo.ToPtr(startTime.AddDate(0, 0, 3)),
 				})
 				require.NoError(t, err)
 
@@ -303,7 +304,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				assert.NoError(t, err)
@@ -314,7 +315,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         3,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 100, // full amount can be rolled over
 				})
 				assert.NoError(t, err)
@@ -372,7 +373,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				assert.NoError(t, err)
@@ -383,7 +384,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:      1000,
 					Priority:    3,
 					EffectiveAt: startTime.Add(time.Hour * 2),
-					ExpiresAt:   startTime.AddDate(0, 0, 3),
+					ExpiresAt:   lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					// After each reset has a new 500 balance
 					ResetMaxRollover: 500,
 					ResetMinRollover: 500,
@@ -444,7 +445,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				require.NoError(t, err)
@@ -455,7 +456,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:      1000,
 					Priority:    3,
 					EffectiveAt: startTime.Add(time.Hour * 2),
-					ExpiresAt:   startTime.AddDate(0, 0, 3),
+					ExpiresAt:   lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					// After each reset has a new 500 balance
 					ResetMaxRollover: 500,
 					ResetMinRollover: 500,
@@ -553,7 +554,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				require.NoError(t, err)
@@ -564,7 +565,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         3,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 100, // full amount can be rolled over
 				})
 				require.NoError(t, err)
@@ -605,7 +606,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      resetTime1.Add(time.Hour * 1),
-					ExpiresAt:        resetTime1.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(resetTime1.AddDate(0, 0, 3)),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				require.NoError(t, err)
@@ -669,7 +670,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        startTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(startTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 0, // full amount can be rolled over
 				})
 				require.NoError(t, err)
@@ -694,7 +695,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      resetTime,
-					ExpiresAt:        resetTime.AddDate(0, 0, 3),
+					ExpiresAt:        lo.ToPtr(resetTime.AddDate(0, 0, 3)),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				require.NoError(t, err)
@@ -742,7 +743,7 @@ func TestResetEntitlementUsage(t *testing.T) {
 					Amount:           1000,
 					Priority:         1,
 					EffectiveAt:      startTime.Add(time.Hour * 2),
-					ExpiresAt:        resetTime,
+					ExpiresAt:        lo.ToPtr(resetTime),
 					ResetMaxRollover: 1000, // full amount can be rolled over
 				})
 				require.NoError(t, err)

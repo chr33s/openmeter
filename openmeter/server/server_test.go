@@ -31,13 +31,11 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/entitlement"
 	meteredentitlement "github.com/openmeterio/openmeter/openmeter/entitlement/metered"
 	"github.com/openmeterio/openmeter/openmeter/ingest"
-	"github.com/openmeterio/openmeter/openmeter/ingest/ingestdriver"
 	"github.com/openmeterio/openmeter/openmeter/meter"
 	meterhttphandler "github.com/openmeterio/openmeter/openmeter/meter/httphandler"
 	meteradapter "github.com/openmeterio/openmeter/openmeter/meter/mockadapter"
 	metereventadapter "github.com/openmeterio/openmeter/openmeter/meterevent/adapter"
 	"github.com/openmeterio/openmeter/openmeter/namespace"
-	"github.com/openmeterio/openmeter/openmeter/namespace/namespacedriver"
 	"github.com/openmeterio/openmeter/openmeter/notification"
 	portaladapter "github.com/openmeterio/openmeter/openmeter/portal/adapter"
 	"github.com/openmeterio/openmeter/openmeter/productcatalog/addon"
@@ -62,6 +60,7 @@ import (
 	"github.com/openmeterio/openmeter/pkg/models"
 	"github.com/openmeterio/openmeter/pkg/pagination"
 	"github.com/openmeterio/openmeter/pkg/ref"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
 )
 
 var DefaultNamespace = "test"
@@ -359,6 +358,17 @@ func TestRoutes(t *testing.T) {
 				body:   []string{"s1"},
 			},
 		},
+		{
+			name: "list meter group by values",
+			req: testRequest{
+				method: http.MethodGet,
+				path:   fmt.Sprintf("/api/v1/meters/%s/group-by/%s/values", mockMeters[0].Key, "groupByKey"),
+			},
+			res: testResponse{
+				status: http.StatusOK,
+				body:   []string{"v1"},
+			},
+		},
 		// Portal
 		{
 			name: "create portal token",
@@ -508,10 +518,8 @@ func getTestServer(t *testing.T) *Server {
 			FeatureConnector:            featureService,
 			GrantConnector:              &NoopGrantConnector{},
 			// Use the grant repo
-			GrantRepo: grantRepo,
-			IngestHandler: ingestdriver.NewIngestEventsHandler(func(ctx context.Context, request ingest.IngestEventsRequest) (bool, error) {
-				return true, nil
-			}, namespacedriver.StaticNamespaceDecoder("test"), nil, errorsx.NewNopHandler()),
+			GrantRepo:          grantRepo,
+			IngestService:      &NoopIngestService{},
 			Logger:             logger,
 			MeterManageService: meterManageService,
 			MeterEventService:  meterEventService,
@@ -651,6 +659,10 @@ func (c *MockStreamingConnector) ListSubjects(ctx context.Context, params stream
 	return []string{"s1"}, nil
 }
 
+func (c *MockStreamingConnector) ListGroupByValues(ctx context.Context, params streaming.ListGroupByValuesParams) ([]string, error) {
+	return []string{"v1"}, nil
+}
+
 func (c *MockStreamingConnector) BatchInsert(ctx context.Context, events []streaming.RawEvent) error {
 	return nil
 }
@@ -692,7 +704,7 @@ type NoopEntitlementConnector struct{}
 func (n NoopEntitlementConnector) RegisterHooks(hooks ...models.ServiceHook[entitlement.Entitlement]) {
 }
 
-func (n NoopEntitlementConnector) CreateEntitlement(ctx context.Context, input entitlement.CreateEntitlementInputs) (*entitlement.Entitlement, error) {
+func (n NoopEntitlementConnector) CreateEntitlement(ctx context.Context, input entitlement.CreateEntitlementInputs, grants []entitlement.CreateEntitlementGrantInputs) (*entitlement.Entitlement, error) {
 	return &entitlement.Entitlement{}, nil
 }
 
@@ -700,7 +712,7 @@ func (n NoopEntitlementConnector) ScheduleEntitlement(ctx context.Context, input
 	return &entitlement.Entitlement{}, nil
 }
 
-func (n NoopEntitlementConnector) OverrideEntitlement(ctx context.Context, subject string, entitlementIdOrFeatureKey string, input entitlement.CreateEntitlementInputs) (*entitlement.Entitlement, error) {
+func (n NoopEntitlementConnector) OverrideEntitlement(ctx context.Context, subject string, entitlementIdOrFeatureKey string, input entitlement.CreateEntitlementInputs, grants []entitlement.CreateEntitlementGrantInputs) (*entitlement.Entitlement, error) {
 	return &entitlement.Entitlement{}, nil
 }
 
@@ -850,6 +862,10 @@ func (n NoopNotificationService) ListEvents(_ context.Context, _ notification.Li
 
 func (n NoopNotificationService) GetEvent(_ context.Context, _ notification.GetEventInput) (*notification.Event, error) {
 	return &notification.Event{}, nil
+}
+
+func (n NoopNotificationService) ResendEvent(_ context.Context, _ notification.ResendEventInput) error {
+	return nil
 }
 
 func (n NoopNotificationService) CreateEvent(_ context.Context, _ notification.CreateEventInput) (*notification.Event, error) {
@@ -1209,7 +1225,11 @@ var _ subscription.Service = (*NoopSubscriptionService)(nil)
 // for use in testing
 type NoopSubscriptionService struct{}
 
-func (n NoopSubscriptionService) RegisterValidator(validator subscription.SubscriptionValidator) error {
+func (n NoopSubscriptionService) UpdateAnnotations(ctx context.Context, subscriptionID models.NamespacedID, annotations models.Annotations) (*subscription.Subscription, error) {
+	return nil, nil
+}
+
+func (n NoopSubscriptionService) RegisterHook(validator subscription.SubscriptionCommandHook) error {
 	return nil
 }
 
@@ -1245,8 +1265,12 @@ func (n NoopSubscriptionService) List(ctx context.Context, params subscription.L
 	return pagination.Result[subscription.Subscription]{}, nil
 }
 
-func (n NoopSubscriptionService) GetAllForCustomerSince(ctx context.Context, customerID models.NamespacedID, at time.Time) ([]subscription.Subscription, error) {
+func (n NoopSubscriptionService) GetAllForCustomer(ctx context.Context, customerID models.NamespacedID, period timeutil.StartBoundedPeriod) ([]subscription.Subscription, error) {
 	return []subscription.Subscription{}, nil
+}
+
+func (n NoopSubscriptionService) ExpandViews(ctx context.Context, subs []subscription.Subscription) ([]subscription.SubscriptionView, error) {
+	return []subscription.SubscriptionView{}, nil
 }
 
 var _ subscriptionworkflow.Service = (*NoopSubscriptionWorkflowService)(nil)
@@ -1312,6 +1336,10 @@ func (n NoopGrantRepo) CreateGrant(ctx context.Context, input grant.RepoCreateIn
 }
 
 func (n NoopGrantRepo) VoidGrant(ctx context.Context, grantID models.NamespacedID, at time.Time) error {
+	return nil
+}
+
+func (n NoopGrantRepo) DeleteOwnerGrants(ctx context.Context, ownerID models.NamespacedID) error {
 	return nil
 }
 
@@ -1562,4 +1590,15 @@ func (n NoopSubjectService) List(ctx context.Context, orgId string, params subje
 
 func (n NoopSubjectService) Delete(ctx context.Context, id models.NamespacedID) error {
 	return nil
+}
+
+// IngestService methods
+var _ ingest.Service = (*NoopIngestService)(nil)
+
+// NoopIngestService implements ingest.Service with no-op operations
+// for use in testing
+type NoopIngestService struct{}
+
+func (n NoopIngestService) IngestEvents(ctx context.Context, request ingest.IngestEventsRequest) (bool, error) {
+	return true, nil
 }

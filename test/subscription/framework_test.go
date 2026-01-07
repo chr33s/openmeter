@@ -17,7 +17,9 @@ import (
 	billingadapter "github.com/openmeterio/openmeter/openmeter/billing/adapter"
 	billingservice "github.com/openmeterio/openmeter/openmeter/billing/service"
 	"github.com/openmeterio/openmeter/openmeter/billing/service/invoicecalc"
-	billingworkersubscription "github.com/openmeterio/openmeter/openmeter/billing/worker/subscription"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync"
+	subscriptionsyncadapter "github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/adapter"
+	subscriptionsyncservice "github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/service"
 	pcsubscription "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription"
 	pcsubscriptionservice "github.com/openmeterio/openmeter/openmeter/productcatalog/subscription/service"
 	subscription "github.com/openmeterio/openmeter/openmeter/subscription"
@@ -34,7 +36,7 @@ type testDeps struct {
 	pcSubscriptionService       pcsubscription.PlanSubscriptionService
 	subscriptionService         subscription.Service
 	subscriptionWorkflowService subscriptionworkflow.Service
-	workerHandler               *billingworkersubscription.Handler
+	subscriptionSyncService     subscriptionsync.Service
 	billingService              billing.Service
 	sandboxApp                  app.App
 	cleanup                     func(t *testing.T) // Cleanup function
@@ -63,8 +65,7 @@ func setup(t *testing.T, _ setupConfig) testDeps {
 
 	// App
 	appAdapter, err := appadapter.New(appadapter.Config{
-		Client:  deps.DBDeps.DBClient,
-		BaseURL: "http://localhost:8888",
+		Client: deps.DBDeps.DBClient,
 	})
 	require.NoError(t, err)
 
@@ -98,12 +99,17 @@ func setup(t *testing.T, _ setupConfig) testDeps {
 
 	billingService = billingService.WithInvoiceCalculator(invoiceCalculator)
 
-	workerHandler, err := billingworkersubscription.New(billingworkersubscription.Config{
-		BillingService:      billingService,
-		Logger:              slog.Default(),
-		Tracer:              noop.NewTracerProvider().Tracer("test"),
-		TxCreator:           billingAdapter,
-		SubscriptionService: deps.SubscriptionService,
+	subscriptionSyncAdapter, err := subscriptionsyncadapter.New(subscriptionsyncadapter.Config{
+		Client: deps.DBDeps.DBClient,
+	})
+	require.NoError(t, err)
+
+	subscriptionSyncService, err := subscriptionsyncservice.New(subscriptionsyncservice.Config{
+		BillingService:          billingService,
+		Logger:                  slog.Default(),
+		Tracer:                  noop.NewTracerProvider().Tracer("test"),
+		SubscriptionSyncAdapter: subscriptionSyncAdapter,
+		SubscriptionService:     deps.SubscriptionService,
 	})
 	require.NoError(t, err)
 
@@ -148,7 +154,7 @@ func setup(t *testing.T, _ setupConfig) testDeps {
 		subscriptionService:         deps.SubscriptionService,
 		subscriptionWorkflowService: deps.WorkflowService,
 		cleanup:                     dbDeps.Cleanup,
-		workerHandler:               workerHandler,
+		subscriptionSyncService:     subscriptionSyncService,
 		billingService:              billingService,
 		sandboxApp:                  sandboxApp,
 	}

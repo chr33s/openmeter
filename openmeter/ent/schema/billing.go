@@ -123,6 +123,12 @@ func (BillingWorkflowConfig) Fields() []ent.Field {
 		field.Enum("collection_alignment").
 			GoType(billing.AlignmentKind("")),
 
+		field.JSON("anchored_alignment_detail", &billing.AnchoredAlignmentDetail{}).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional(),
+
 		field.String("line_collection_period").GoType(datetime.ISODurationString("")),
 
 		field.Bool("invoice_auto_advance"),
@@ -194,11 +200,16 @@ func (BillingCustomerOverride) Fields() []ent.Field {
 			}),
 
 		// Workflow config overrides
-		// TODO: later we will add more alignment details here (e.g. monthly, yearly, etc.)
 		field.Enum("collection_alignment").
 			GoType(billing.AlignmentKind("")).
 			Optional().
 			Nillable(),
+
+		field.JSON("anchored_alignment_detail", &billing.AnchoredAlignmentDetail{}).
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}).
+			Optional(),
 
 		field.String("line_collection_period").
 			GoType(datetime.ISODurationString("")).
@@ -867,7 +878,8 @@ func (BillingInvoice) Fields() []ent.Field {
 		field.String("customer_name").
 			NotEmpty(),
 
-		field.JSON("customer_usage_attribution", &billing.VersionedCustomerUsageAttribution{}),
+		field.JSON("customer_usage_attribution", &billing.VersionedCustomerUsageAttribution{}).
+			Optional(),
 
 		// Invoice number
 		field.String("number"),
@@ -986,6 +998,12 @@ func (BillingInvoice) Fields() []ent.Field {
 		field.Time("collection_at").
 			Optional().
 			Default(clock.Now),
+
+		// This is the timestamp the invoice first entered the Payment Processing State (InvoiceStatusPaymentProcessingPending).
+		// This is relevant as we later use this to determine stale-ness and guard against fraud.
+		field.Time("payment_processing_entered_at").
+			Optional().
+			Nillable(),
 	}
 }
 
@@ -994,6 +1012,10 @@ func (BillingInvoice) Indexes() []ent.Index {
 		index.Fields("namespace", "id"),
 		index.Fields("namespace", "customer_id"),
 		index.Fields("namespace", "status"),
+		index.Fields("namespace", "period_start"),
+		index.Fields("namespace", "created_at"),
+		index.Fields("namespace", "updated_at"),
+		index.Fields("namespace", "issued_at"),
 		index.Fields("status_details_cache").
 			Annotations(
 				entsql.IndexTypes(map[string]string{

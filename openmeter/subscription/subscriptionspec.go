@@ -41,13 +41,14 @@ type CreateSubscriptionPlanInput struct {
 
 type CreateSubscriptionCustomerInput struct {
 	models.MetadataModel `json:",inline"`
-	Name                 string         `json:"name"`
-	Description          *string        `json:"description,omitempty"`
-	CustomerId           string         `json:"customerId"`
-	Currency             currencyx.Code `json:"currency"`
-	ActiveFrom           time.Time      `json:"activeFrom,omitempty"`
-	ActiveTo             *time.Time     `json:"activeTo,omitempty"`
-	BillingAnchor        time.Time      `json:"billingAnchor,omitempty"`
+	Name                 string             `json:"name"`
+	Description          *string            `json:"description,omitempty"`
+	CustomerId           string             `json:"customerId"`
+	Currency             currencyx.Code     `json:"currency"`
+	ActiveFrom           time.Time          `json:"activeFrom,omitempty"`
+	ActiveTo             *time.Time         `json:"activeTo,omitempty"`
+	BillingAnchor        time.Time          `json:"billingAnchor,omitempty"`
+	Annotations          models.Annotations `json:"annotations"`
 }
 
 type SubscriptionSpec struct {
@@ -70,6 +71,7 @@ func (s *SubscriptionSpec) ToCreateSubscriptionEntityInput(ns string) CreateSubs
 		ProRatingConfig: s.ProRatingConfig,
 		BillingAnchor:   s.BillingAnchor,
 		MetadataModel:   s.MetadataModel,
+		Annotations:     s.Annotations,
 		Name:            s.Name,
 		Description:     s.Description,
 		CadencedModel: models.CadencedModel{
@@ -333,9 +335,8 @@ func (s *SubscriptionSpec) ValidateAlignment() error {
 	for _, phase := range s.GetSortedPhases() {
 		for _, itemsByKey := range phase.GetBillableItemsByKey() {
 			for idx, item := range itemsByKey {
-				fieldSelector := models.NewFieldSelectors(
-					models.NewFieldSelector("phases"),
-					models.NewFieldSelector(phase.PhaseKey),
+				fieldSelector := models.NewFieldSelectorGroup(
+					phase.FieldDescriptor(),
 					models.NewFieldSelector("itemsByKey"),
 					models.NewFieldSelector(item.ItemKey).
 						WithExpression(models.NewFieldArrIndex(idx)),
@@ -352,6 +353,15 @@ func (s *SubscriptionSpec) ValidateAlignment() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+var _ models.CadenceComparable = SubscriptionSpec{}
+
+func (s SubscriptionSpec) GetCadence() models.CadencedModel {
+	return models.CadencedModel{
+		ActiveFrom: s.ActiveFrom,
+		ActiveTo:   s.ActiveTo,
+	}
 }
 
 type CreateSubscriptionPhasePlanInput struct {
@@ -481,15 +491,21 @@ func (s SubscriptionPhaseSpec) SyncAnnotations() error {
 	return nil
 }
 
+func (s SubscriptionPhaseSpec) FieldDescriptor() *models.FieldDescriptor {
+	return models.NewFieldSelectorGroup(
+		models.NewFieldSelector("phases"),
+		models.NewFieldSelector(s.PhaseKey),
+	).WithAttributes(models.Attributes{
+		PhaseDescriptor: true,
+	})
+}
+
 func (s SubscriptionPhaseSpec) Validate(
 	phaseCadence models.CadencedModel,
 ) error {
 	var errs []error
 
-	phaseSelector := models.NewFieldSelectors(
-		models.NewFieldSelector("phases"),
-		models.NewFieldSelector(s.PhaseKey),
-	)
+	phaseSelector := s.FieldDescriptor()
 
 	// Phase StartAfter really should not be negative
 	if s.StartAfter.IsNegative() {
@@ -504,25 +520,24 @@ func (s SubscriptionPhaseSpec) Validate(
 	if len(flat) == 0 {
 		errs = append(errs, models.ErrorWithFieldPrefix(
 			phaseSelector,
-			ErrSubscriptionPhaseHasNoItems.WithAttr(
-				subscriptionPatchErrAttrNameAllowedDuringApplyingToSpecError,
-				true,
+			ErrSubscriptionPhaseHasNoItems.With(
+				AllowedDuringApplyingToSpecError(),
 			),
 		))
 	}
 
 	for key, items := range s.ItemsByKey {
 		for idx, item := range items {
-			itemSelector := models.NewFieldSelectors(
+			itemSelector := models.NewFieldSelectorGroup(
 				models.NewFieldSelector("itemsByKey"),
 				models.NewFieldSelector(key).
 					WithExpression(models.NewFieldArrIndex(idx)),
-			).WithPrefix(phaseSelector)
+			)
 
 			// Let's validate key is correct
 			if item.ItemKey != key {
 				errs = append(errs, models.ErrorWithFieldPrefix(
-					itemSelector,
+					itemSelector.WithPrefix(phaseSelector),
 					ErrSubscriptionPhaseItemHistoryKeyMismatch,
 				))
 			}
@@ -530,7 +545,7 @@ func (s SubscriptionPhaseSpec) Validate(
 			// Let's validate the phase linking is correct
 			if item.PhaseKey != s.PhaseKey {
 				errs = append(errs, models.ErrorWithFieldPrefix(
-					itemSelector,
+					itemSelector.WithPrefix(phaseSelector),
 					ErrSubscriptionPhaseItemKeyMismatchWithPhaseKey,
 				))
 			}
@@ -538,7 +553,7 @@ func (s SubscriptionPhaseSpec) Validate(
 			// Let's validate the item contents
 			if err := item.Validate(); err != nil {
 				errs = append(errs, models.ErrorWithFieldPrefix(
-					itemSelector,
+					itemSelector.WithPrefix(phaseSelector),
 					err,
 				))
 			}
@@ -572,7 +587,6 @@ func (s SubscriptionPhaseSpec) Validate(
 							WithExpression(models.NewFieldArrIndex(overlap.Index1)),
 					).WithAttrs(models.Attributes{
 						"overlaps_with_idx": overlap.Index2,
-						"reason":            overlap.Reason,
 						"cadence":           overlap.Item1,
 						"spec":              itemSpec1,
 					}),
@@ -587,7 +601,6 @@ func (s SubscriptionPhaseSpec) Validate(
 							WithExpression(models.NewFieldArrIndex(overlap.Index2)),
 					).WithAttrs(models.Attributes{
 						"overlaps_with_idx": overlap.Index1,
-						"reason":            overlap.Reason,
 						"cadence":           overlap.Item2,
 						"spec":              itemSpec2,
 					}),
@@ -917,7 +930,15 @@ func (s SubscriptionItemSpec) ToScheduleSubscriptionEntitlementInput(
 			return def, true, fmt.Errorf("failed to get static entitlement template: %w", err)
 		}
 		scheduleInput.Metadata = tpl.Metadata
-		scheduleInput.Config = tpl.Config
+
+		var configJSON string
+
+		err = json.Unmarshal(tpl.Config, &configJSON)
+		if err != nil {
+			return def, true, fmt.Errorf("failed to unmarshal static entitlement template config: %w", err)
+		}
+
+		scheduleInput.Config = &configJSON
 	case entitlement.EntitlementTypeMetered:
 		tpl, err := meta.EntitlementTemplate.AsMetered()
 		if err != nil {
@@ -972,6 +993,10 @@ func (s *SubscriptionItemSpec) SyncAnnotations() error {
 	if met.EntitlementTemplate != nil && met.EntitlementTemplate.Type() == entitlement.EntitlementTypeBoolean {
 		count := AnnotationParser.GetBooleanEntitlementCount(s.Annotations)
 		if count == 0 {
+			if s.Annotations == nil {
+				s.Annotations = models.Annotations{}
+			}
+
 			if _, err := AnnotationParser.SetBooleanEntitlementCount(s.Annotations, 1); err != nil {
 				return fmt.Errorf("failed to set boolean entitlement count: %w", err)
 			}

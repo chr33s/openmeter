@@ -46,7 +46,7 @@ func (s *UBPFlatFeeLineTestSuite) TestPendingLineCreation() {
 	}
 
 	s.Run("should create a pending line", func() {
-		lineIn := billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+		lineIn := billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 			Period:    period,
 			InvoiceAt: period.End,
 
@@ -110,15 +110,14 @@ func (s *UBPFlatFeeLineTestSuite) TestPendingLineCreation() {
 		s.Len(lines, 1)
 		line := lines[0]
 
-		s.Len(line.Children, 1)
-		detailedLine := line.Children[0]
+		s.Len(line.DetailedLines, 1)
+		detailedLine := line.DetailedLines[0]
 
 		// Let's validate the detailed line
-		s.Equal(float64(1), detailedLine.FlatFee.Quantity.InexactFloat64())
-		s.Equal(float64(100), detailedLine.FlatFee.PerUnitAmount.InexactFloat64())
-		s.Equal(productcatalog.InArrearsPaymentTerm, detailedLine.FlatFee.PaymentTerm)
+		s.Equal(float64(1), detailedLine.Quantity.InexactFloat64())
+		s.Equal(float64(100), detailedLine.PerUnitAmount.InexactFloat64())
+		s.Equal(productcatalog.InArrearsPaymentTerm, detailedLine.PaymentTerm)
 		s.Equal("test in arrears", detailedLine.Name)
-		s.Equal(line.ID, *detailedLine.ParentLineID)
 
 		// Let's validate the totals
 		requireTotals(s.T(), expectedTotals{
@@ -158,7 +157,7 @@ func (s *UBPFlatFeeLineTestSuite) TestPercentageDiscount() {
 		Customer: cust.GetID(),
 		Currency: "USD",
 		Lines: []*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+			billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 				Period:    period,
 				InvoiceAt: period.End,
 
@@ -191,12 +190,12 @@ func (s *UBPFlatFeeLineTestSuite) TestPercentageDiscount() {
 	s.Len(lines, 1)
 	line := lines[0]
 
-	s.Len(line.Children, 1)
-	detailedLine := line.Children[0]
+	s.Len(line.DetailedLines, 1)
+	detailedLine := line.DetailedLines[0]
 
 	// Let's validate the lines
 
-	amountDiscounts := detailedLine.Discounts.Amount
+	amountDiscounts := detailedLine.AmountDiscounts
 	s.Len(amountDiscounts, 1)
 	amountDiscount := amountDiscounts[0]
 	s.Equal(float64(100), amountDiscount.Amount.InexactFloat64())
@@ -237,7 +236,7 @@ func (s *UBPFlatFeeLineTestSuite) TestValidations() {
 			Customer: cust.GetID(),
 			Currency: "USD",
 			Lines: []*billing.Line{
-				billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+				billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 					Period:    period,
 					InvoiceAt: period.End,
 
@@ -263,7 +262,7 @@ func (s *UBPFlatFeeLineTestSuite) TestValidations() {
 			Customer: cust.GetID(),
 			Currency: "USD",
 			Lines: []*billing.Line{
-				billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+				billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 					Period: billing.Period{
 						Start: period.Start,
 						End:   period.Start,

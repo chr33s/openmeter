@@ -3,6 +3,7 @@
 package db
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/notificationeventdeliverystatus"
 	"github.com/openmeterio/openmeter/openmeter/notification"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
 // NotificationEventDeliveryStatus is the model entity for the NotificationEventDeliveryStatus schema.
@@ -20,6 +22,8 @@ type NotificationEventDeliveryStatus struct {
 	ID string `json:"id,omitempty"`
 	// Namespace holds the value of the "namespace" field.
 	Namespace string `json:"namespace,omitempty"`
+	// Annotations holds the value of the "annotations" field.
+	Annotations models.Annotations `json:"annotations,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -32,6 +36,10 @@ type NotificationEventDeliveryStatus struct {
 	State notification.EventDeliveryStatusState `json:"state,omitempty"`
 	// Reason holds the value of the "reason" field.
 	Reason string `json:"reason,omitempty"`
+	// NextAttemptAt holds the value of the "next_attempt_at" field.
+	NextAttemptAt *time.Time `json:"next_attempt_at,omitempty"`
+	// Attempts holds the value of the "attempts" field.
+	Attempts []notification.EventDeliveryAttempt `json:"attempts,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the NotificationEventDeliveryStatusQuery when eager-loading is set.
 	Edges        NotificationEventDeliveryStatusEdges `json:"edges"`
@@ -61,9 +69,11 @@ func (*NotificationEventDeliveryStatus) scanValues(columns []string) ([]any, err
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case notificationeventdeliverystatus.FieldAnnotations, notificationeventdeliverystatus.FieldAttempts:
+			values[i] = new([]byte)
 		case notificationeventdeliverystatus.FieldID, notificationeventdeliverystatus.FieldNamespace, notificationeventdeliverystatus.FieldEventID, notificationeventdeliverystatus.FieldChannelID, notificationeventdeliverystatus.FieldState, notificationeventdeliverystatus.FieldReason:
 			values[i] = new(sql.NullString)
-		case notificationeventdeliverystatus.FieldCreatedAt, notificationeventdeliverystatus.FieldUpdatedAt:
+		case notificationeventdeliverystatus.FieldCreatedAt, notificationeventdeliverystatus.FieldUpdatedAt, notificationeventdeliverystatus.FieldNextAttemptAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -91,6 +101,14 @@ func (_m *NotificationEventDeliveryStatus) assignValues(columns []string, values
 				return fmt.Errorf("unexpected type %T for field namespace", values[i])
 			} else if value.Valid {
 				_m.Namespace = value.String
+			}
+		case notificationeventdeliverystatus.FieldAnnotations:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field annotations", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Annotations); err != nil {
+					return fmt.Errorf("unmarshal field annotations: %w", err)
+				}
 			}
 		case notificationeventdeliverystatus.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -127,6 +145,21 @@ func (_m *NotificationEventDeliveryStatus) assignValues(columns []string, values
 				return fmt.Errorf("unexpected type %T for field reason", values[i])
 			} else if value.Valid {
 				_m.Reason = value.String
+			}
+		case notificationeventdeliverystatus.FieldNextAttemptAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field next_attempt_at", values[i])
+			} else if value.Valid {
+				_m.NextAttemptAt = new(time.Time)
+				*_m.NextAttemptAt = value.Time
+			}
+		case notificationeventdeliverystatus.FieldAttempts:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field attempts", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Attempts); err != nil {
+					return fmt.Errorf("unmarshal field attempts: %w", err)
+				}
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -172,6 +205,9 @@ func (_m *NotificationEventDeliveryStatus) String() string {
 	builder.WriteString("namespace=")
 	builder.WriteString(_m.Namespace)
 	builder.WriteString(", ")
+	builder.WriteString("annotations=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Annotations))
+	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
@@ -189,6 +225,14 @@ func (_m *NotificationEventDeliveryStatus) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("reason=")
 	builder.WriteString(_m.Reason)
+	builder.WriteString(", ")
+	if v := _m.NextAttemptAt; v != nil {
+		builder.WriteString("next_attempt_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
+	builder.WriteString(", ")
+	builder.WriteString("attempts=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Attempts))
 	builder.WriteByte(')')
 	return builder.String()
 }

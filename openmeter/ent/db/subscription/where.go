@@ -199,6 +199,16 @@ func NamespaceContainsFold(v string) predicate.Subscription {
 	return predicate.Subscription(sql.FieldContainsFold(FieldNamespace, v))
 }
 
+// AnnotationsIsNil applies the IsNil predicate on the "annotations" field.
+func AnnotationsIsNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldIsNull(FieldAnnotations))
+}
+
+// AnnotationsNotNil applies the NotNil predicate on the "annotations" field.
+func AnnotationsNotNil() predicate.Subscription {
+	return predicate.Subscription(sql.FieldNotNull(FieldAnnotations))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Subscription {
 	return predicate.Subscription(sql.FieldEQ(FieldCreatedAt, v))
@@ -1047,6 +1057,29 @@ func HasAddons() predicate.Subscription {
 func HasAddonsWith(preds ...predicate.SubscriptionAddon) predicate.Subscription {
 	return predicate.Subscription(func(s *sql.Selector) {
 		step := newAddonsStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
+// HasBillingSyncState applies the HasEdge predicate on the "billing_sync_state" edge.
+func HasBillingSyncState() predicate.Subscription {
+	return predicate.Subscription(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, BillingSyncStateTable, BillingSyncStateColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasBillingSyncStateWith applies the HasEdge predicate on the "billing_sync_state" edge with a given conditions (other predicates).
+func HasBillingSyncStateWith(preds ...predicate.SubscriptionBillingSyncState) predicate.Subscription {
+	return predicate.Subscription(func(s *sql.Selector) {
+		step := newBillingSyncStateStep()
 		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
 			for _, p := range preds {
 				p(s)

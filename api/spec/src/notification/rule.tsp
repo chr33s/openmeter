@@ -5,7 +5,7 @@ import "@typespec/openapi3";
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
 
-namespace OpenMeter.Notification;
+namespace OpenMeter;
 
 /**
  * Metadata only fields of a notification channel.
@@ -48,6 +48,8 @@ model NotificationRuleCommon<T extends NotificationEventType> {
    */
   @summary("Rule Name")
   @example("Balance threshold reached")
+  @minLength(1)
+  @maxLength(256)
   @visibility(Lifecycle.Read, Lifecycle.Create, Lifecycle.Update)
   name: string;
 
@@ -65,6 +67,20 @@ model NotificationRuleCommon<T extends NotificationEventType> {
   @visibility(Lifecycle.Read, Lifecycle.Create, Lifecycle.Update)
   @summary("Channels assigned to Rule")
   channels: Array<NotificationChannelMeta>;
+
+  /**
+   * Set of key-value pairs managed by the system. Cannot be modified by user.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Annotations")
+  annotations?: Annotations;
+
+  /**
+   * Additional metadata for the resource.
+   */
+  @visibility(Lifecycle.Read, Lifecycle.Create, Lifecycle.Update)
+  @summary("Metadata")
+  metadata?: Metadata | null;
 }
 
 /**
@@ -108,7 +124,8 @@ enum NotificationRuleOrderBy {
 
 @route("/api/v1/notification/rules")
 @tag("Notifications")
-interface Rules {
+@friendlyName("NotificationRules")
+interface NotificationRulesEndpoints {
   /**
    * List all notification rules.
    */
@@ -150,9 +167,9 @@ interface Rules {
     @query(#{ explode: true })
     channel?: Array<string>,
 
-    ...OpenMeter.QueryPagination,
-    ...OpenMeter.QueryOrdering<NotificationRuleOrderBy>,
-  ): OpenMeter.PaginatedResponse<NotificationRule> | OpenMeter.CommonErrors;
+    ...QueryPagination,
+    ...QueryOrdering<NotificationRuleOrderBy>,
+  ): PaginatedResponse<NotificationRule> | CommonErrors;
 
   /**
    * Create a new notification rule.
@@ -163,7 +180,7 @@ interface Rules {
   create(@body request: NotificationRuleCreateRequest): {
     @statusCode _: 201;
     @body body: NotificationRule;
-  } | OpenMeter.CommonErrors;
+  } | CommonErrors;
 
   /**
    * Update notification rule.
@@ -174,7 +191,7 @@ interface Rules {
   update(@path ruleId: ULID, @body request: NotificationRuleCreateRequest): {
     @statusCode _: 200;
     @body body: NotificationRule;
-  } | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  } | NotFoundError | CommonErrors;
 
   /**
    * Get a notification rule by id.
@@ -182,9 +199,7 @@ interface Rules {
   @get
   @operationId("getNotificationRule")
   @summary("Get notification rule")
-  get(
-    @path ruleId: ULID,
-  ): NotificationRule | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  get(@path ruleId: ULID): NotificationRule | NotFoundError | CommonErrors;
 
   /**
    * Soft delete notification rule by id.
@@ -196,7 +211,7 @@ interface Rules {
   @summary("Delete a notification rule")
   delete(@path ruleId: ULID): {
     @statusCode _: 204;
-  } | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  } | NotFoundError | CommonErrors;
 
   /**
    * Test a notification rule by sending a test event with random data.
@@ -208,5 +223,5 @@ interface Rules {
   test(@path ruleId: ULID): {
     @statusCode _: 201;
     @body body: NotificationEvent;
-  } | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  } | NotFoundError | CommonErrors;
 }

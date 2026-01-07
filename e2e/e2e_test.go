@@ -746,6 +746,172 @@ func TestQuery(t *testing.T) {
 	})
 }
 
+func TestQueryDSTTransition(t *testing.T) {
+	client := initClient(t)
+
+	// Test DST transitions with DAY window size in America/Los_Angeles timezone
+	// Verify that window boundaries are continuous across DST changes
+	// DST start: March 9, 2025 at 2am -> 3am (spring forward)
+	// DST end: November 2, 2025 at 2am -> 1am (fall back)
+
+	losAngeles, err := time.LoadLocation("America/Los_Angeles")
+	require.NoError(t, err)
+
+	eventType := "query"
+	subject := "customer-dst"
+
+	t.Run("DST_Spring_Forward", func(t *testing.T) {
+		// Test March 9, 2025 DST transition (spring forward: 2am -> 3am)
+		// Test 3 days before and 3 days after the transition
+		var events []cloudevents.Event
+
+		// Generate events for March 6-12, 2025 (3 days before, transition day, 3 days after)
+		for day := 6; day <= 12; day++ {
+			baseTime := time.Date(2025, time.March, day, 10, 0, 0, 0, losAngeles)
+			ev := cloudevents.New()
+			ev.SetID(ulid.Make().String())
+			ev.SetSource("dst-test")
+			ev.SetType(eventType)
+			ev.SetSubject(subject)
+			ev.SetTime(baseTime)
+			_ = ev.SetData("application/json", map[string]interface{}{
+				"duration_ms": "100",
+			})
+			events = append(events, ev)
+		}
+
+		// Ingest events
+		{
+			resp, err := client.IngestEventBatchWithResponse(context.Background(), events)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, resp.StatusCode())
+		}
+
+		// Query with DAY window size in Los Angeles timezone
+		assert.EventuallyWithT(t, func(t *assert.CollectT) {
+			from := time.Date(2025, time.March, 6, 0, 0, 0, 0, losAngeles)
+			to := time.Date(2025, time.March, 13, 0, 0, 0, 0, losAngeles)
+
+			resp, err := client.QueryMeterWithResponse(context.Background(), eventType, &api.QueryMeterParams{
+				Subject:        &[]string{subject},
+				WindowSize:     lo.ToPtr(api.WindowSizeDay),
+				WindowTimeZone: lo.ToPtr("America/Los_Angeles"),
+				From:           lo.ToPtr(from),
+				To:             lo.ToPtr(to),
+			})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode())
+
+			require.NotNil(t, resp.JSON200)
+			require.Len(t, resp.JSON200.Data, 7) // March 6-12
+
+			// Verify window continuity - each window's end should equal the next window's start
+			for i := 0; i < len(resp.JSON200.Data)-1; i++ {
+				currentWindowEnd := resp.JSON200.Data[i].WindowEnd.In(losAngeles)
+				nextWindowStart := resp.JSON200.Data[i+1].WindowStart.In(losAngeles)
+				assert.Equal(t, currentWindowEnd, nextWindowStart,
+					"Gap detected: window %d ends at %v but window %d starts at %v",
+					i, currentWindowEnd, i+1, nextWindowStart)
+			}
+
+			// Verify all windows start at midnight in LA timezone
+			for i, row := range resp.JSON200.Data {
+				windowStart := row.WindowStart.In(losAngeles)
+				assert.Equal(t, 0, windowStart.Hour(), "Day %d window doesn't start at midnight", i)
+				assert.Equal(t, 0, windowStart.Minute(), "Day %d window doesn't start at midnight", i)
+				assert.Equal(t, 0, windowStart.Second(), "Day %d window doesn't start at midnight", i)
+			}
+
+			// Verify the DST transition day (March 9) windows are correct
+			dstDay := resp.JSON200.Data[3] // March 9 is index 3 (6,7,8,9)
+			assert.Equal(t, time.Date(2025, time.March, 9, 0, 0, 0, 0, losAngeles), dstDay.WindowStart.In(losAngeles))
+			assert.Equal(t, time.Date(2025, time.March, 10, 0, 0, 0, 0, losAngeles), dstDay.WindowEnd.In(losAngeles))
+		}, time.Minute, time.Second)
+	})
+
+	t.Run("DST_Fall_Back", func(t *testing.T) {
+		// Test November 2, 2025 DST transition (fall back: 2am -> 1am)
+		// Test 3 days before and 3 days after the transition
+		var events []cloudevents.Event
+
+		// Generate events for October 30 - November 5, 2025 (3 days before, transition day, 3 days after)
+		days := []struct {
+			month int
+			day   int
+		}{
+			{int(time.October), 30},
+			{int(time.October), 31},
+			{int(time.November), 1},
+			{int(time.November), 2},
+			{int(time.November), 3},
+			{int(time.November), 4},
+			{int(time.November), 5},
+		}
+
+		for _, d := range days {
+			baseTime := time.Date(2025, time.Month(d.month), d.day, 10, 0, 0, 0, losAngeles)
+			ev := cloudevents.New()
+			ev.SetID(ulid.Make().String())
+			ev.SetSource("dst-test")
+			ev.SetType(eventType)
+			ev.SetSubject(subject)
+			ev.SetTime(baseTime)
+			_ = ev.SetData("application/json", map[string]interface{}{
+				"duration_ms": "100",
+			})
+			events = append(events, ev)
+		}
+
+		// Ingest events
+		{
+			resp, err := client.IngestEventBatchWithResponse(context.Background(), events)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusNoContent, resp.StatusCode())
+		}
+
+		// Query with DAY window size in Los Angeles timezone
+		assert.EventuallyWithT(t, func(t *assert.CollectT) {
+			from := time.Date(2025, time.October, 30, 0, 0, 0, 0, losAngeles)
+			to := time.Date(2025, time.November, 6, 0, 0, 0, 0, losAngeles)
+
+			resp, err := client.QueryMeterWithResponse(context.Background(), eventType, &api.QueryMeterParams{
+				Subject:        &[]string{subject},
+				WindowSize:     lo.ToPtr(api.WindowSizeDay),
+				WindowTimeZone: lo.ToPtr("America/Los_Angeles"),
+				From:           lo.ToPtr(from),
+				To:             lo.ToPtr(to),
+			})
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode())
+
+			require.NotNil(t, resp.JSON200)
+			require.Len(t, resp.JSON200.Data, 7) // October 30 - November 5
+
+			// Verify window continuity - each window's end should equal the next window's start
+			for i := 0; i < len(resp.JSON200.Data)-1; i++ {
+				currentWindowEnd := resp.JSON200.Data[i].WindowEnd.In(losAngeles)
+				nextWindowStart := resp.JSON200.Data[i+1].WindowStart.In(losAngeles)
+				assert.Equal(t, currentWindowEnd, nextWindowStart,
+					"Gap detected: window %d ends at %v but window %d starts at %v",
+					i, currentWindowEnd, i+1, nextWindowStart)
+			}
+
+			// Verify all windows start at midnight in LA timezone
+			for i, row := range resp.JSON200.Data {
+				windowStart := row.WindowStart.In(losAngeles)
+				assert.Equal(t, 0, windowStart.Hour(), "Day %d window doesn't start at midnight", i)
+				assert.Equal(t, 0, windowStart.Minute(), "Day %d window doesn't start at midnight", i)
+				assert.Equal(t, 0, windowStart.Second(), "Day %d window doesn't start at midnight", i)
+			}
+
+			// Verify the DST transition day (November 2) windows are correct
+			dstDay := resp.JSON200.Data[3] // November 2 is index 3 (Oct 30, 31, Nov 1, 2)
+			assert.Equal(t, time.Date(2025, time.November, 2, 0, 0, 0, 0, losAngeles), dstDay.WindowStart.In(losAngeles))
+			assert.Equal(t, time.Date(2025, time.November, 3, 0, 0, 0, 0, losAngeles), dstDay.WindowEnd.In(losAngeles))
+		}, time.Minute, time.Second)
+	})
+}
+
 func TestCredit(t *testing.T) {
 	client := initClient(t)
 	meterSlug := "credit_test_meter"
@@ -790,6 +956,11 @@ func TestCredit(t *testing.T) {
 			MeterSlug: convert.ToPointer("credit_test_meter"),
 			MeterGroupByFilters: &map[string]string{
 				"model": "gpt-4",
+			},
+			AdvancedMeterGroupByFilters: &map[string]api.FilterString{
+				"model": {
+					Eq: convert.ToPointer("gpt-4"),
+				},
 			},
 		}
 
@@ -896,9 +1067,9 @@ func TestCredit(t *testing.T) {
 		require.Equal(t, *metered.IssueAfterReset, (*grantListResp.JSON200)[0].Amount)
 		require.Equal(t, metered.IssueAfterResetPriority, (*grantListResp.JSON200)[0].Priority)
 		require.Equal(t, metered.Id, (*grantListResp.JSON200)[0].EntitlementId)
-		require.Equal(t, map[string]string{
-			"issueAfterReset": "true",
-		}, *(*grantListResp.JSON200)[0].Metadata)
+		require.Equal(t, api.Annotations{
+			"issueAfterReset": true,
+		}, *(*grantListResp.JSON200)[0].Annotations)
 	})
 	t.Run("Create a Entitlement With MeasureUsageFrom enum", func(t *testing.T) {
 		randSubject := ulid.Make().String()
@@ -956,6 +1127,9 @@ func TestCredit(t *testing.T) {
 				Anchor:   convert.ToPointer(time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC)),
 				Interval: *apiYEAR,
 			},
+			Metadata: &api.Metadata{
+				"some_key": "some_value",
+			},
 		})
 		require.NoError(t, err)
 		require.Equal(t, http.StatusCreated, resp.StatusCode(), "Invalid status code [response_body=%s]", resp.Body)
@@ -981,6 +1155,9 @@ func TestCredit(t *testing.T) {
 				Anchor:      time.Date(2024, time.January, 1, 0, 0, 0, 0, time.UTC),
 				Interval:    *apiYEAR,
 				IntervalISO: "P1Y",
+			},
+			Metadata: &api.Metadata{
+				"some_key": "some_value",
 			},
 		}
 
@@ -1090,10 +1267,11 @@ func TestCredit(t *testing.T) {
 		require.Equal(t, http.StatusOK, resp.StatusCode())
 
 		expected := &api.EntitlementValue{
-			Balance:   convert.ToPointer(99.0),
-			HasAccess: true,
-			Overage:   convert.ToPointer(0.0),
-			Usage:     convert.ToPointer(1.0),
+			Balance:                   convert.ToPointer(99.0),
+			HasAccess:                 true,
+			Overage:                   convert.ToPointer(0.0),
+			Usage:                     convert.ToPointer(1.0),
+			TotalAvailableGrantAmount: convert.ToPointer(100.0),
 		}
 
 		assert.Equal(t, expected, resp.JSON200)

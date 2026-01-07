@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 
 	db_feature "github.com/openmeterio/openmeter/openmeter/ent/db/feature"
@@ -15,6 +16,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/productcatalog/adapter"
 	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
 	"github.com/openmeterio/openmeter/openmeter/testutils"
+	"github.com/openmeterio/openmeter/pkg/filter"
 	"github.com/openmeterio/openmeter/pkg/models"
 	"github.com/openmeterio/openmeter/pkg/pagination"
 )
@@ -44,8 +46,10 @@ func TestCreateFeature(t *testing.T) {
 		Name:      "feature-1",
 		Key:       "feature-1",
 		MeterSlug: &meter.Key,
-		MeterGroupByFilters: map[string]string{
-			"key": "value",
+		MeterGroupByFilters: feature.MeterGroupByFilters{
+			"key": filter.FilterString{
+				Eq: lo.ToPtr("value"),
+			},
 		},
 	}
 
@@ -90,7 +94,7 @@ func TestCreateFeature(t *testing.T) {
 				assert.NoError(t, err)
 
 				// archives the feature
-				err = connector.ArchiveFeature(ctx, models.NamespacedID{
+				err = connector.ArchiveFeature(ctx, feature.ArchiveFeatureInput{
 					Namespace: featureIn.Namespace,
 					ID:        createFeatureOut.ID,
 				})
@@ -98,7 +102,7 @@ func TestCreateFeature(t *testing.T) {
 
 				// errors on a feature that doesn't exist
 				fakeID := ulid.Make().String()
-				err = connector.ArchiveFeature(ctx, models.NamespacedID{
+				err = connector.ArchiveFeature(ctx, feature.ArchiveFeatureInput{
 					Namespace: featureIn.Namespace,
 					ID:        fakeID,
 				})
@@ -156,7 +160,7 @@ func TestCreateFeature(t *testing.T) {
 				assert.Len(t, features.Items, 1)
 				assert.Equal(t, "feature-2", features.Items[0].Name)
 
-				err = connector.ArchiveFeature(ctx, models.NamespacedID{
+				err = connector.ArchiveFeature(ctx, feature.ArchiveFeatureInput{
 					Namespace: namespace,
 					ID:        features.Items[0].ID,
 				})
@@ -202,7 +206,7 @@ func TestCreateFeature(t *testing.T) {
 
 				assert.Equal(t, "feature-1", foundFeature.Name)
 
-				err = connector.ArchiveFeature(ctx, models.NamespacedID{
+				err = connector.ArchiveFeature(ctx, feature.ArchiveFeatureInput{
 					Namespace: namespace,
 					ID:        foundFeature.ID,
 				})
@@ -295,8 +299,10 @@ func TestArchiveFeature(t *testing.T) {
 		Name:      "feature-1",
 		Key:       "feature-1",
 		MeterSlug: &meter.Key,
-		MeterGroupByFilters: map[string]string{
-			"key": "value",
+		MeterGroupByFilters: feature.MeterGroupByFilters{
+			"key": filter.FilterString{
+				Eq: lo.ToPtr("value"),
+			},
 		},
 	}
 
@@ -352,7 +358,7 @@ func TestArchiveFeature(t *testing.T) {
 		createFeatureOut, err := connector.CreateFeature(ctx, featureIn)
 		assert.NoError(t, err)
 
-		err = connector.ArchiveFeature(ctx, models.NamespacedID{
+		err = connector.ArchiveFeature(ctx, feature.ArchiveFeatureInput{
 			Namespace: createFeatureOut.Namespace,
 			ID:        createFeatureOut.ID,
 		})
@@ -385,8 +391,10 @@ func TestFetchingArchivedFeature(t *testing.T) {
 		Name:      "feature-1",
 		Key:       "feature-1",
 		MeterSlug: &meter.Key,
-		MeterGroupByFilters: map[string]string{
-			"key": "value",
+		MeterGroupByFilters: feature.MeterGroupByFilters{
+			"key": filter.FilterString{
+				Eq: lo.ToPtr("value"),
+			},
 		},
 	}
 
@@ -408,7 +416,7 @@ func TestFetchingArchivedFeature(t *testing.T) {
 		createFeatureOutArchived, err := connector.CreateFeature(ctx, featureIn)
 		assert.NoError(t, err)
 
-		err = connector.ArchiveFeature(ctx, models.NamespacedID{
+		err = connector.ArchiveFeature(ctx, feature.ArchiveFeatureInput{
 			Namespace: createFeatureOutArchived.Namespace,
 			ID:        createFeatureOutArchived.ID,
 		})

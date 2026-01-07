@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/google/wire"
+	svix "github.com/svix/svix-webhooks/go"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/openmeterio/openmeter/app/config"
 	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
@@ -60,16 +62,22 @@ func NewNoopNotificationEventHandler() (notification.EventHandler, func(), error
 }
 
 func NewNotificationEventHandler(
+	config config.NotificationConfiguration,
 	logger *slog.Logger,
+	tracer trace.Tracer,
 	adapter notification.Repository,
 	webhook notificationwebhook.Handler,
 ) (notification.EventHandler, func(), error) {
 	closeFn := func() {}
 
 	eventHandler, err := eventhandler.New(eventhandler.Config{
-		Repository: adapter,
-		Webhook:    webhook,
-		Logger:     logger,
+		Repository:        adapter,
+		Webhook:           webhook,
+		Logger:            logger,
+		Tracer:            tracer,
+		ReconcileInterval: config.ReconcileInterval,
+		SendingTimeout:    config.SendingTimeout,
+		PendingTimeout:    config.PendingTimeout,
 	})
 	if err != nil {
 		return nil, closeFn, fmt.Errorf("failed to initialize notification event handler: %w", err)
@@ -117,19 +125,23 @@ func NewNoopNotificationWebhookHandler(
 
 func NewNotificationWebhookHandler(
 	logger *slog.Logger,
+	tracer trace.Tracer,
 	webhookConfig config.WebhookConfiguration,
-	svixConfig config.SvixConfig,
+	svixClient *svix.Svix,
 ) (notificationwebhook.Handler, error) {
-	if !svixConfig.IsEnabled() {
+	if svixClient == nil {
+		logger.Warn("svix client not configured, using noop handler")
+
 		return webhooknoop.New(logger), nil
 	}
 
 	handler, err := webhooksvix.New(webhooksvix.Config{
-		SvixConfig:              svixConfig,
+		SvixAPIClient:           svixClient,
 		RegisterEventTypes:      notificationwebhook.NotificationEventTypes,
 		RegistrationTimeout:     webhookConfig.EventTypeRegistrationTimeout,
 		SkipRegistrationOnError: webhookConfig.SkipEventTypeRegistrationOnError,
 		Logger:                  logger.WithGroup("notification.webhook"),
+		Tracer:                  tracer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize notification webhook handler: %w", err)

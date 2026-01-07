@@ -10,10 +10,13 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/openmeterio/openmeter/api"
+	"github.com/openmeterio/openmeter/openmeter/apiconverter"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/meter"
 	"github.com/openmeterio/openmeter/openmeter/streaming"
+	"github.com/openmeterio/openmeter/pkg/filter"
 	"github.com/openmeterio/openmeter/pkg/models"
+	modelshttp "github.com/openmeterio/openmeter/pkg/models/http"
 )
 
 // ToAPIMeter converts a meter.Meter to an api.Meter.
@@ -30,6 +33,8 @@ func ToAPIMeter(m meter.Meter) api.Meter {
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
 		DeletedAt:     m.DeletedAt,
+		Metadata:      modelshttp.FromMetadata(m.Metadata),
+		Annotations:   modelshttp.FromAnnotations(m.Annotations),
 	}
 
 	if len(m.GroupBy) > 0 {
@@ -78,14 +83,15 @@ func ToAPIMeterQueryRowList(rows []meter.MeterQueryRow) []api.MeterQueryRow {
 func ToRequestFromQueryParamsPOSTBody(apiParams api.QueryMeterParams) api.QueryMeterPostJSONRequestBody {
 	// Map the POST request body to a GET request params
 	request := api.QueryMeterPostJSONRequestBody{
-		ClientId:         apiParams.ClientId,
-		From:             apiParams.From,
-		To:               apiParams.To,
-		Subject:          apiParams.Subject,
-		GroupBy:          apiParams.GroupBy,
-		FilterCustomerId: apiParams.FilterCustomerId,
-		WindowSize:       apiParams.WindowSize,
-		WindowTimeZone:   apiParams.WindowTimeZone,
+		ClientId:                    apiParams.ClientId,
+		From:                        apiParams.From,
+		To:                          apiParams.To,
+		Subject:                     apiParams.Subject,
+		GroupBy:                     apiParams.GroupBy,
+		FilterCustomerId:            apiParams.FilterCustomerId,
+		WindowSize:                  apiParams.WindowSize,
+		WindowTimeZone:              apiParams.WindowTimeZone,
+		AdvancedMeterGroupByFilters: (*map[string]api.FilterString)(apiParams.AdvancedMeterGroupByFilters),
 	}
 
 	if apiParams.FilterGroupBy != nil {
@@ -160,15 +166,26 @@ func (h *handler) toQueryParamsFromRequest(ctx context.Context, m meter.Meter, r
 		params.WindowTimeZone = tz
 	}
 
-	if request.FilterGroupBy != nil {
+	if request.AdvancedMeterGroupByFilters != nil && len(*request.AdvancedMeterGroupByFilters) > 0 {
+		params.FilterGroupBy = apiconverter.ConvertStringMap(*request.AdvancedMeterGroupByFilters)
+	}
+
+	if request.FilterGroupBy != nil && len(*request.FilterGroupBy) > 0 {
+		if len(params.FilterGroupBy) > 0 {
+			return params, models.NewGenericValidationError(errors.New("advanced meter group by filters and filter group by cannot be used together"))
+		}
+
+		params.FilterGroupBy = map[string]filter.FilterString{}
 		for k, v := range *request.FilterGroupBy {
 			// GroupBy filters
 			if _, ok := m.GroupBy[k]; ok {
-				if params.FilterGroupBy == nil {
-					params.FilterGroupBy = map[string][]string{}
+				// Convert []string to FilterString using $in operator
+				if len(v) > 0 {
+					// Multiple values use $in
+					params.FilterGroupBy[k] = filter.FilterString{
+						In: lo.ToPtr(v),
+					}
 				}
-
-				params.FilterGroupBy[k] = v
 				continue
 			} else {
 				err := fmt.Errorf("invalid group by filter: %s", k)

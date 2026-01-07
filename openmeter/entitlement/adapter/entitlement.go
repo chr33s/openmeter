@@ -9,6 +9,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/samber/lo"
 
+	"github.com/openmeterio/openmeter/openmeter/customer"
 	customeradapter "github.com/openmeterio/openmeter/openmeter/customer/adapter"
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
 	customerdb "github.com/openmeterio/openmeter/openmeter/ent/db/customer"
@@ -16,11 +17,9 @@ import (
 	db_entitlement "github.com/openmeterio/openmeter/openmeter/ent/db/entitlement"
 	db_feature "github.com/openmeterio/openmeter/openmeter/ent/db/feature"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
-	db_subject "github.com/openmeterio/openmeter/openmeter/ent/db/subject"
 	db_usagereset "github.com/openmeterio/openmeter/openmeter/ent/db/usagereset"
 	"github.com/openmeterio/openmeter/openmeter/entitlement"
 	"github.com/openmeterio/openmeter/openmeter/entitlement/balanceworker"
-	"github.com/openmeterio/openmeter/openmeter/subject"
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/convert"
 	"github.com/openmeterio/openmeter/pkg/defaultx"
@@ -62,9 +61,7 @@ func (a *entitlementDBAdapter) GetEntitlement(ctx context.Context, entitlementID
 			res, err := withAllUsageResets(repo.db.Entitlement.Query(), []string{entitlementID.Namespace}).
 				WithCustomer(func(q *db.CustomerQuery) {
 					customeradapter.WithSubjects(q, clock.Now())
-					customeradapter.WithActiveSubscriptions(q, clock.Now())
 				}).
-				WithSubject().
 				Where(
 					db_entitlement.ID(entitlementID.ID),
 					db_entitlement.Namespace(entitlementID.Namespace),
@@ -91,9 +88,7 @@ func (a *entitlementDBAdapter) GetActiveEntitlementOfCustomerAt(ctx context.Cont
 			res, err := withAllUsageResets(repo.db.Entitlement.Query(), []string{namespace}).
 				WithCustomer(func(q *db.CustomerQuery) {
 					customeradapter.WithSubjects(q, at)
-					customeradapter.WithActiveSubscriptions(q, at)
 				}).
-				WithSubject().
 				Where(EntitlementActiveAt(at)...).
 				Where(
 					db_entitlement.Or(db_entitlement.DeletedAtGT(at), db_entitlement.DeletedAtIsNil()),
@@ -137,7 +132,6 @@ func (a *entitlementDBAdapter) CreateEntitlement(ctx context.Context, ent entitl
 			)
 
 			query = customeradapter.WithSubjects(query, now)
-			query = customeradapter.WithActiveSubscriptions(query, now)
 
 			cus, err := query.Only(ctx)
 			if err != nil {
@@ -150,41 +144,12 @@ func (a *entitlementDBAdapter) CreateEntitlement(ctx context.Context, ent entitl
 				return nil, fmt.Errorf("failed to resolve customer: %w", err)
 			}
 
-			entitlementCustomer, err := customeradapter.CustomerFromDBEntity(*cus)
-			if err != nil {
-				return nil, fmt.Errorf("failed to map customer: %w", err)
-			}
-
-			subjectKey, err := entitlementCustomer.UsageAttribution.GetSubjectKey()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get subject key: %w", err)
-			}
-
-			// Resolve Subject entity to set subject_id and subject_key
-			subj, err := repo.db.Subject.Query().
-				Where(
-					db_subject.Key(subjectKey),
-					db_subject.Namespace(ent.Namespace),
-				).
-				Only(ctx)
-			if err != nil {
-				if db.IsNotFound(err) {
-					return nil, models.NewGenericNotFoundError(
-						fmt.Errorf("subject with key %s not found in %s namespace", subjectKey, ent.Namespace),
-					)
-				}
-
-				return nil, fmt.Errorf("failed to load subject %s: %w", subjectKey, err)
-			}
-
 			cmd := repo.db.Entitlement.Create().
 				SetEntitlementType(db_entitlement.EntitlementType(ent.EntitlementType)).
 				SetNamespace(ent.Namespace).
 				SetFeatureID(ent.FeatureID).
 				SetMetadata(ent.Metadata).
 				SetCustomerID(cus.ID).
-				SetSubjectID(subj.ID).
-				SetSubjectKey(subjectKey).
 				SetFeatureKey(ent.FeatureKey).
 				SetNillableMeasureUsageFrom(ent.MeasureUsageFrom).
 				SetNillableIssueAfterReset(ent.IssueAfterReset).
@@ -211,7 +176,7 @@ func (a *entitlementDBAdapter) CreateEntitlement(ctx context.Context, ent entitl
 			}
 
 			if ent.Config != nil {
-				cmd.SetConfig(ent.Config)
+				cmd.SetNillableConfig(ent.Config)
 			}
 
 			res, err := cmd.Save(ctx)
@@ -223,9 +188,7 @@ func (a *entitlementDBAdapter) CreateEntitlement(ctx context.Context, ent entitl
 			entWithEdges, err := repo.db.Entitlement.Query().
 				WithCustomer(func(q *db.CustomerQuery) {
 					customeradapter.WithSubjects(q, now)
-					customeradapter.WithActiveSubscriptions(q, now)
 				}).
-				WithSubject().
 				Where(db_entitlement.ID(res.ID)).
 				Only(ctx)
 			if err != nil {
@@ -286,56 +249,63 @@ func (a *entitlementDBAdapter) DeactivateEntitlement(ctx context.Context, entitl
 
 // TODO[OM-1009]: This returns all the entitlements even the expired ones, for billing we would need to have a range for
 // the batch ingested events. Let's narrow down the list of entitlements active during that period.
-func (a *entitlementDBAdapter) ListEntitlementsAffectedByIngestEvents(ctx context.Context, eventFilters []balanceworker.IngestEventQueryFilter) ([]balanceworker.ListAffectedEntitlementsResponse, error) {
+func (a *entitlementDBAdapter) ListEntitlementsAffectedByIngestEvents(ctx context.Context, eventFilter balanceworker.IngestEventQueryFilter) ([]balanceworker.ListAffectedEntitlementsResponse, error) {
 	return entutils.TransactingRepo[[]balanceworker.ListAffectedEntitlementsResponse, *entitlementDBAdapter](
 		ctx,
 		a,
 		func(ctx context.Context, repo *entitlementDBAdapter) ([]balanceworker.ListAffectedEntitlementsResponse, error) {
-			if len(eventFilters) == 0 {
-				return nil, fmt.Errorf("no eventFilters provided")
-			}
-
 			result := make([]balanceworker.ListAffectedEntitlementsResponse, 0)
 
-			for _, pair := range eventFilters {
-				entities, err := repo.db.Entitlement.Query().
-					Where(
-						db_entitlement.Namespace(pair.Namespace),
-						db_entitlement.HasCustomerWith(
-							customerdb.Namespace(pair.Namespace),
-							customerNotDeletedAt(clock.Now()),
-							customerdb.HasSubjectsWith(
-								customersubjectsdb.SubjectKey(pair.EventSubject),
-								customersubjectsdb.DeletedAtIsNil(),
-							),
-						),
-						db_entitlement.HasFeatureWith(db_feature.MeterSlugIn(pair.MeterSlugs...)),
-					).
-					WithFeature().
-					WithCustomer(
-						func(q *db.CustomerQuery) {
-							customeradapter.WithSubjects(q, clock.Now())
-							customeradapter.WithActiveSubscriptions(q, clock.Now())
-						},
-					).
-					All(ctx)
-				if err != nil {
-					return nil, err
-				}
+			// Resolve event subject to customer IDs
+			customers, err := repo.db.Customer.Query().Where(
+				customerdb.Namespace(eventFilter.Namespace),
+				customerNotDeletedAt(clock.Now()),
+				customerdb.Or(
+					customerdb.Key(eventFilter.EventSubject),
+					customerdb.HasSubjectsWith(
+						customersubjectsdb.SubjectKey(eventFilter.EventSubject),
+						customersubjectsdb.DeletedAtIsNil(),
+					),
+				),
+			).All(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to query customers: %w", err)
+			}
 
-				for _, e := range entities {
-					if e.Edges.Customer == nil {
-						return nil, fmt.Errorf("entitlement %s has no customer", e.ID)
-					}
+			// resolve feature IDs
+			features, err := repo.db.Feature.Query().Where(
+				db_feature.Namespace(eventFilter.Namespace),
+				db_feature.MeterSlugIn(eventFilter.MeterSlugs...),
+				db_feature.ArchivedAtIsNil(),
+			).All(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to query features by meters: %w", err)
+			}
 
-					result = append(result, balanceworker.ListAffectedEntitlementsResponse{
-						Namespace:     e.Namespace,
-						EntitlementID: e.ID,
-						SubjectKey:    pair.EventSubject,
-						CustomerID:    e.Edges.Customer.ID,
-						MeterSlug:     e.Edges.Feature.MeterSlug,
-					})
-				}
+			entitlements, err := repo.db.Entitlement.Query().
+				Where(
+					db_entitlement.Namespace(eventFilter.Namespace),
+					db_entitlement.CustomerIDIn(lo.Uniq(lo.Map(customers, func(item *db.Customer, _ int) string {
+						return item.ID
+					}))...),
+					db_entitlement.FeatureIDIn(lo.Map(features, func(item *db.Feature, _ int) string {
+						return item.ID
+					})...),
+				).
+				All(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("failed to query entitlements: %w", err)
+			}
+
+			for _, e := range entitlements {
+				result = append(result, balanceworker.ListAffectedEntitlementsResponse{
+					Namespace:     e.Namespace,
+					EntitlementID: e.ID,
+					CreatedAt:     e.CreatedAt.UTC(),
+					DeletedAt:     convert.SafeToUTC(e.DeletedAt),
+					ActiveFrom:    convert.SafeToUTC(e.ActiveFrom),
+					ActiveTo:      convert.SafeToUTC(e.ActiveTo),
+				})
 			}
 
 			return result, nil
@@ -349,9 +319,8 @@ func (a *entitlementDBAdapter) ListEntitlements(ctx context.Context, params enti
 		func(ctx context.Context, repo *entitlementDBAdapter) (pagination.Result[entitlement.Entitlement], error) {
 			now := clock.Now().UTC()
 
-			query := repo.db.Entitlement.Query().WithSubject().WithCustomer(func(q *db.CustomerQuery) {
+			query := repo.db.Entitlement.Query().WithCustomer(func(q *db.CustomerQuery) {
 				customeradapter.WithSubjects(q, now)
-				customeradapter.WithActiveSubscriptions(q, now)
 			})
 
 			if len(params.Namespaces) > 0 {
@@ -499,10 +468,6 @@ func (a *entitlementDBAdapter) ListEntitlements(ctx context.Context, params enti
 }
 
 func (a *entitlementDBAdapter) mapEntitlementEntity(e *db.Entitlement) (*entitlement.Entitlement, error) {
-	if e.Edges.Subject == nil {
-		return nil, fmt.Errorf("entitlement %s has no subject", e.ID)
-	}
-
 	if e.Edges.Customer == nil {
 		return nil, fmt.Errorf("entitlement %s has no customer", e.ID)
 	}
@@ -522,7 +487,6 @@ func (a *entitlementDBAdapter) mapEntitlementEntity(e *db.Entitlement) (*entitle
 			},
 			Annotations:     e.Annotations,
 			ID:              e.ID,
-			SubjectKey:      e.Edges.Subject.Key,
 			FeatureID:       e.FeatureID,
 			FeatureKey:      e.FeatureKey,
 			EntitlementType: entitlement.EntitlementType(e.EntitlementType),
@@ -536,16 +500,7 @@ func (a *entitlementDBAdapter) mapEntitlementEntity(e *db.Entitlement) (*entitle
 		PreserveOverageAtReset:  e.PreserveOverageAtReset,
 	}
 
-	ent.Subject = subject.Subject{
-		Namespace:        e.Edges.Subject.Namespace,
-		Id:               e.Edges.Subject.ID,
-		Key:              e.Edges.Subject.Key,
-		DisplayName:      e.Edges.Subject.DisplayName,
-		Metadata:         e.Edges.Subject.Metadata,
-		StripeCustomerId: e.Edges.Subject.StripeCustomerID,
-	}
-
-	if mapped, mapErr := customeradapter.CustomerFromDBEntity(*e.Edges.Customer); mapErr == nil {
+	if mapped, mapErr := customeradapter.CustomerFromDBEntity(*e.Edges.Customer, customer.Expands{}); mapErr == nil {
 		ent.Customer = mapped
 	}
 
@@ -667,7 +622,6 @@ func (a *entitlementDBAdapter) UpsertEntitlementCurrentPeriods(ctx context.Conte
 				WithCustomer(
 					func(q *db.CustomerQuery) {
 						customeradapter.WithSubjects(q, now)
-						customeradapter.WithActiveSubscriptions(q, now)
 					},
 				).
 				All(ctx)
@@ -701,8 +655,6 @@ func (a *entitlementDBAdapter) UpsertEntitlementCurrentPeriods(ctx context.Conte
 					SetFeatureID(ent.FeatureID).
 					SetFeatureKey(ent.FeatureKey).
 					SetCustomerID(ent.CustomerID).
-					SetSubjectID(ent.SubjectID).
-					SetSubjectKey(ent.SubjectKey).
 					SetCurrentUsagePeriodStart(update.CurrentUsagePeriod.From).
 					SetCurrentUsagePeriodEnd(update.CurrentUsagePeriod.To)
 
@@ -747,9 +699,7 @@ func (a *entitlementDBAdapter) ListActiveEntitlementsWithExpiredUsagePeriod(ctx 
 			query := withAllUsageResets(repo.db.Entitlement.Query(), params.Namespaces).
 				WithCustomer(func(q *db.CustomerQuery) {
 					customeradapter.WithSubjects(q, now)
-					customeradapter.WithActiveSubscriptions(q, now)
 				}).
-				WithSubject().
 				Where(EntitlementActiveAt(params.Highwatermark)...).
 				Where(
 					db_entitlement.CurrentUsagePeriodEndNotNil(),
@@ -881,9 +831,8 @@ func (a *entitlementDBAdapter) GetScheduledEntitlements(ctx context.Context, nam
 		func(ctx context.Context, repo *entitlementDBAdapter) (*[]entitlement.Entitlement, error) {
 			now := clock.Now()
 
-			query := repo.db.Entitlement.Query().WithSubject().WithCustomer(func(q *db.CustomerQuery) {
+			query := repo.db.Entitlement.Query().WithCustomer(func(q *db.CustomerQuery) {
 				customeradapter.WithSubjects(q, now)
-				customeradapter.WithActiveSubscriptions(q, now)
 			})
 			query = withAllUsageResets(query, []string{namespace})
 			res, err := query.

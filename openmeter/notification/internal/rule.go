@@ -175,7 +175,7 @@ func (t *TestEventGenerator) newTestInvoicePayload(ctx context.Context, namespac
 				UpdatedAt: now,
 			}),
 			Key: lo.ToPtr("test-customer-1"),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test-subject-1"},
 			},
 			PrimaryEmail: lo.ToPtr("test-customer-1@example.com"),
@@ -185,7 +185,7 @@ func (t *TestEventGenerator) newTestInvoicePayload(ctx context.Context, namespac
 		Number:   lo.ToPtr("TEST-INV-1"),
 		Currency: currencyx.Code(currency.USD),
 		Lines: billing.NewInvoiceLines([]*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+			billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 				Namespace: namespace,
 				ID:        ulid.Make().String(),
 				CreatedAt: now,

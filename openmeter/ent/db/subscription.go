@@ -13,9 +13,11 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/ent/db/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/plan"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/subscription"
+	"github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionbillingsyncstate"
 	"github.com/openmeterio/openmeter/openmeter/productcatalog"
 	"github.com/openmeterio/openmeter/pkg/currencyx"
 	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
 // Subscription is the model entity for the Subscription schema.
@@ -25,6 +27,8 @@ type Subscription struct {
 	ID string `json:"id,omitempty"`
 	// Namespace holds the value of the "namespace" field.
 	Namespace string `json:"namespace,omitempty"`
+	// Annotations holds the value of the "annotations" field.
+	Annotations models.Annotations `json:"annotations,omitempty"`
 	// CreatedAt holds the value of the "created_at" field.
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
@@ -73,9 +77,11 @@ type SubscriptionEdges struct {
 	BillingSplitLineGroups []*BillingInvoiceSplitLineGroup `json:"billing_split_line_groups,omitempty"`
 	// Addons holds the value of the addons edge.
 	Addons []*SubscriptionAddon `json:"addons,omitempty"`
+	// BillingSyncState holds the value of the billing_sync_state edge.
+	BillingSyncState *SubscriptionBillingSyncState `json:"billing_sync_state,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [6]bool
+	loadedTypes [7]bool
 }
 
 // PlanOrErr returns the Plan value or an error if the edge
@@ -136,12 +142,23 @@ func (e SubscriptionEdges) AddonsOrErr() ([]*SubscriptionAddon, error) {
 	return nil, &NotLoadedError{edge: "addons"}
 }
 
+// BillingSyncStateOrErr returns the BillingSyncState value or an error if the edge
+// was not loaded in eager-loading, or loaded but was not found.
+func (e SubscriptionEdges) BillingSyncStateOrErr() (*SubscriptionBillingSyncState, error) {
+	if e.BillingSyncState != nil {
+		return e.BillingSyncState, nil
+	} else if e.loadedTypes[6] {
+		return nil, &NotFoundError{label: subscriptionbillingsyncstate.Label}
+	}
+	return nil, &NotLoadedError{edge: "billing_sync_state"}
+}
+
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Subscription) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case subscription.FieldMetadata:
+		case subscription.FieldAnnotations, subscription.FieldMetadata:
 			values[i] = new([]byte)
 		case subscription.FieldID, subscription.FieldNamespace, subscription.FieldName, subscription.FieldDescription, subscription.FieldPlanID, subscription.FieldCustomerID, subscription.FieldCurrency, subscription.FieldBillingCadence:
 			values[i] = new(sql.NullString)
@@ -175,6 +192,14 @@ func (_m *Subscription) assignValues(columns []string, values []any) error {
 				return fmt.Errorf("unexpected type %T for field namespace", values[i])
 			} else if value.Valid {
 				_m.Namespace = value.String
+			}
+		case subscription.FieldAnnotations:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field annotations", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.Annotations); err != nil {
+					return fmt.Errorf("unmarshal field annotations: %w", err)
+				}
 			}
 		case subscription.FieldCreatedAt:
 			if value, ok := values[i].(*sql.NullTime); !ok {
@@ -309,6 +334,11 @@ func (_m *Subscription) QueryAddons() *SubscriptionAddonQuery {
 	return NewSubscriptionClient(_m.config).QueryAddons(_m)
 }
 
+// QueryBillingSyncState queries the "billing_sync_state" edge of the Subscription entity.
+func (_m *Subscription) QueryBillingSyncState() *SubscriptionBillingSyncStateQuery {
+	return NewSubscriptionClient(_m.config).QueryBillingSyncState(_m)
+}
+
 // Update returns a builder for updating this Subscription.
 // Note that you need to call Subscription.Unwrap() before calling this method if this Subscription
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -334,6 +364,9 @@ func (_m *Subscription) String() string {
 	builder.WriteString(fmt.Sprintf("id=%v, ", _m.ID))
 	builder.WriteString("namespace=")
 	builder.WriteString(_m.Namespace)
+	builder.WriteString(", ")
+	builder.WriteString("annotations=")
+	builder.WriteString(fmt.Sprintf("%v", _m.Annotations))
 	builder.WriteString(", ")
 	builder.WriteString("created_at=")
 	builder.WriteString(_m.CreatedAt.Format(time.ANSIC))

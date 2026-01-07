@@ -58,10 +58,7 @@ func (e *entitlementGrantOwner) DescribeOwner(ctx context.Context, id models.Nam
 	ent, err := e.entitlementRepo.GetEntitlement(ctx, id)
 	if err != nil {
 		if _, ok := lo.ErrorsAs[*entitlement.NotFoundError](err); ok {
-			return def, &grant.OwnerNotFoundError{
-				Owner:          id,
-				AttemptedOwner: "entitlement",
-			}
+			return def, grant.NewOwnerNotFoundError(id, "entitlement")
 		}
 
 		return def, err
@@ -90,27 +87,27 @@ func (e *entitlementGrantOwner) DescribeOwner(ctx context.Context, id models.Nam
 		return def, fmt.Errorf("failed to get meter: %w", err)
 	}
 
-	queryParams := streaming.QueryParams{}
+	queryParams := streaming.QueryParams{
+		FilterGroupBy: feature.MeterGroupByFilters,
+	}
 
 	// Require filtering by customer; error if missing
 	if ent.Customer == nil {
 		return def, models.NewGenericValidationError(fmt.Errorf("meter queries require customer filtering for entitlement %s", id.ID))
 	}
 
+	var subjectKeys []string
+	if ent.Customer.UsageAttribution != nil {
+		subjectKeys = ent.Customer.UsageAttribution.SubjectKeys
+	}
+
 	streamingCustomer := ownerCustomer{
 		id:          ent.Customer.ID,
 		key:         ent.Customer.Key,
-		subjectKeys: ent.Customer.UsageAttribution.SubjectKeys,
+		subjectKeys: subjectKeys,
 	}
 
 	queryParams.FilterCustomer = []streaming.Customer{streamingCustomer}
-
-	if feature.MeterGroupByFilters != nil {
-		queryParams.FilterGroupBy = map[string][]string{}
-		for k, v := range feature.MeterGroupByFilters {
-			queryParams.FilterGroupBy[k] = []string{v}
-		}
-	}
 
 	return grant.Owner{
 		NamespacedID:       id,
@@ -130,10 +127,7 @@ func (e *entitlementGrantOwner) GetStartOfMeasurement(ctx context.Context, owner
 	owningEntitlement, err := e.entitlementRepo.GetEntitlement(ctx, owner)
 	if err != nil {
 		if _, ok := lo.ErrorsAs[*entitlement.NotFoundError](err); ok {
-			return time.Time{}, &grant.OwnerNotFoundError{
-				Owner:          owner,
-				AttemptedOwner: "entitlement",
-			}
+			return time.Time{}, grant.NewOwnerNotFoundError(owner, "entitlement")
 		}
 
 		return time.Time{}, fmt.Errorf("failed to get entitlement: %w", err)

@@ -7,7 +7,9 @@ import (
 
 	"github.com/alpacahq/alpacadecimal"
 	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/openmeter/notification"
 	"github.com/openmeterio/openmeter/openmeter/productcatalog"
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
 	"github.com/openmeterio/openmeter/pkg/currencyx"
 	"github.com/openmeterio/openmeter/pkg/datetime"
 	"github.com/openmeterio/openmeter/pkg/models"
@@ -433,6 +435,20 @@ func (u *BillingCustomerOverrideUpdateOne) SetOrClearCollectionAlignment(value *
 	return u.SetCollectionAlignment(*value)
 }
 
+func (u *BillingCustomerOverrideUpdate) SetOrClearAnchoredAlignmentDetail(value **billing.AnchoredAlignmentDetail) *BillingCustomerOverrideUpdate {
+	if value == nil {
+		return u.ClearAnchoredAlignmentDetail()
+	}
+	return u.SetAnchoredAlignmentDetail(*value)
+}
+
+func (u *BillingCustomerOverrideUpdateOne) SetOrClearAnchoredAlignmentDetail(value **billing.AnchoredAlignmentDetail) *BillingCustomerOverrideUpdateOne {
+	if value == nil {
+		return u.ClearAnchoredAlignmentDetail()
+	}
+	return u.SetAnchoredAlignmentDetail(*value)
+}
+
 func (u *BillingCustomerOverrideUpdate) SetOrClearLineCollectionPeriod(value *datetime.ISODurationString) *BillingCustomerOverrideUpdate {
 	if value == nil {
 		return u.ClearLineCollectionPeriod()
@@ -783,6 +799,20 @@ func (u *BillingInvoiceUpdateOne) SetOrClearCustomerKey(value *string) *BillingI
 	return u.SetCustomerKey(*value)
 }
 
+func (u *BillingInvoiceUpdate) SetOrClearCustomerUsageAttribution(value **billing.VersionedCustomerUsageAttribution) *BillingInvoiceUpdate {
+	if value == nil {
+		return u.ClearCustomerUsageAttribution()
+	}
+	return u.SetCustomerUsageAttribution(*value)
+}
+
+func (u *BillingInvoiceUpdateOne) SetOrClearCustomerUsageAttribution(value **billing.VersionedCustomerUsageAttribution) *BillingInvoiceUpdateOne {
+	if value == nil {
+		return u.ClearCustomerUsageAttribution()
+	}
+	return u.SetCustomerUsageAttribution(*value)
+}
+
 func (u *BillingInvoiceUpdate) SetOrClearDescription(value *string) *BillingInvoiceUpdate {
 	if value == nil {
 		return u.ClearDescription()
@@ -977,6 +1007,20 @@ func (u *BillingInvoiceUpdateOne) SetOrClearCollectionAt(value *time.Time) *Bill
 		return u.ClearCollectionAt()
 	}
 	return u.SetCollectionAt(*value)
+}
+
+func (u *BillingInvoiceUpdate) SetOrClearPaymentProcessingEnteredAt(value *time.Time) *BillingInvoiceUpdate {
+	if value == nil {
+		return u.ClearPaymentProcessingEnteredAt()
+	}
+	return u.SetPaymentProcessingEnteredAt(*value)
+}
+
+func (u *BillingInvoiceUpdateOne) SetOrClearPaymentProcessingEnteredAt(value *time.Time) *BillingInvoiceUpdateOne {
+	if value == nil {
+		return u.ClearPaymentProcessingEnteredAt()
+	}
+	return u.SetPaymentProcessingEnteredAt(*value)
 }
 
 func (u *BillingInvoiceFlatFeeLineConfigUpdate) SetOrClearIndex(value *int) *BillingInvoiceFlatFeeLineConfigUpdate {
@@ -1791,6 +1835,20 @@ func (u *BillingWorkflowConfigUpdateOne) SetOrClearDeletedAt(value *time.Time) *
 	return u.SetDeletedAt(*value)
 }
 
+func (u *BillingWorkflowConfigUpdate) SetOrClearAnchoredAlignmentDetail(value **billing.AnchoredAlignmentDetail) *BillingWorkflowConfigUpdate {
+	if value == nil {
+		return u.ClearAnchoredAlignmentDetail()
+	}
+	return u.SetAnchoredAlignmentDetail(*value)
+}
+
+func (u *BillingWorkflowConfigUpdateOne) SetOrClearAnchoredAlignmentDetail(value **billing.AnchoredAlignmentDetail) *BillingWorkflowConfigUpdateOne {
+	if value == nil {
+		return u.ClearAnchoredAlignmentDetail()
+	}
+	return u.SetAnchoredAlignmentDetail(*value)
+}
+
 func (u *BillingWorkflowConfigUpdate) SetOrClearInvoiceDefaultTaxSettings(value *productcatalog.TaxConfig) *BillingWorkflowConfigUpdate {
 	if value == nil {
 		return u.ClearInvoiceDefaultTaxSettings()
@@ -2057,14 +2115,14 @@ func (u *EntitlementUpdateOne) SetOrClearActiveTo(value *time.Time) *Entitlement
 	return u.SetActiveTo(*value)
 }
 
-func (u *EntitlementUpdate) SetOrClearConfig(value *[]uint8) *EntitlementUpdate {
+func (u *EntitlementUpdate) SetOrClearConfig(value *string) *EntitlementUpdate {
 	if value == nil {
 		return u.ClearConfig()
 	}
 	return u.SetConfig(*value)
 }
 
-func (u *EntitlementUpdateOne) SetOrClearConfig(value *[]uint8) *EntitlementUpdateOne {
+func (u *EntitlementUpdateOne) SetOrClearConfig(value *string) *EntitlementUpdateOne {
 	if value == nil {
 		return u.ClearConfig()
 	}
@@ -2169,6 +2227,20 @@ func (u *FeatureUpdateOne) SetOrClearMeterGroupByFilters(value *map[string]strin
 	return u.SetMeterGroupByFilters(*value)
 }
 
+func (u *FeatureUpdate) SetOrClearAdvancedMeterGroupByFilters(value *feature.MeterGroupByFilters) *FeatureUpdate {
+	if value == nil {
+		return u.ClearAdvancedMeterGroupByFilters()
+	}
+	return u.SetAdvancedMeterGroupByFilters(*value)
+}
+
+func (u *FeatureUpdateOne) SetOrClearAdvancedMeterGroupByFilters(value *feature.MeterGroupByFilters) *FeatureUpdateOne {
+	if value == nil {
+		return u.ClearAdvancedMeterGroupByFilters()
+	}
+	return u.SetAdvancedMeterGroupByFilters(*value)
+}
+
 func (u *FeatureUpdate) SetOrClearArchivedAt(value *time.Time) *FeatureUpdate {
 	if value == nil {
 		return u.ClearArchivedAt()
@@ -2183,18 +2255,18 @@ func (u *FeatureUpdateOne) SetOrClearArchivedAt(value *time.Time) *FeatureUpdate
 	return u.SetArchivedAt(*value)
 }
 
-func (u *GrantUpdate) SetOrClearMetadata(value *map[string]string) *GrantUpdate {
+func (u *GrantUpdate) SetOrClearAnnotations(value *models.Annotations) *GrantUpdate {
 	if value == nil {
-		return u.ClearMetadata()
+		return u.ClearAnnotations()
 	}
-	return u.SetMetadata(*value)
+	return u.SetAnnotations(*value)
 }
 
-func (u *GrantUpdateOne) SetOrClearMetadata(value *map[string]string) *GrantUpdateOne {
+func (u *GrantUpdateOne) SetOrClearAnnotations(value *models.Annotations) *GrantUpdateOne {
 	if value == nil {
-		return u.ClearMetadata()
+		return u.ClearAnnotations()
 	}
-	return u.SetMetadata(*value)
+	return u.SetAnnotations(*value)
 }
 
 func (u *GrantUpdate) SetOrClearDeletedAt(value *time.Time) *GrantUpdate {
@@ -2209,6 +2281,20 @@ func (u *GrantUpdateOne) SetOrClearDeletedAt(value *time.Time) *GrantUpdateOne {
 		return u.ClearDeletedAt()
 	}
 	return u.SetDeletedAt(*value)
+}
+
+func (u *GrantUpdate) SetOrClearMetadata(value *map[string]string) *GrantUpdate {
+	if value == nil {
+		return u.ClearMetadata()
+	}
+	return u.SetMetadata(*value)
+}
+
+func (u *GrantUpdateOne) SetOrClearMetadata(value *map[string]string) *GrantUpdateOne {
+	if value == nil {
+		return u.ClearMetadata()
+	}
+	return u.SetMetadata(*value)
 }
 
 func (u *GrantUpdate) SetOrClearVoidedAt(value *time.Time) *GrantUpdate {
@@ -2267,6 +2353,20 @@ func (u *MeterUpdateOne) SetOrClearDescription(value *string) *MeterUpdateOne {
 	return u.SetDescription(*value)
 }
 
+func (u *MeterUpdate) SetOrClearAnnotations(value *models.Annotations) *MeterUpdate {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *MeterUpdateOne) SetOrClearAnnotations(value *models.Annotations) *MeterUpdateOne {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
 func (u *MeterUpdate) SetOrClearValueProperty(value *string) *MeterUpdate {
 	if value == nil {
 		return u.ClearValueProperty()
@@ -2323,6 +2423,34 @@ func (u *NotificationChannelUpdateOne) SetOrClearDeletedAt(value *time.Time) *No
 	return u.SetDeletedAt(*value)
 }
 
+func (u *NotificationChannelUpdate) SetOrClearAnnotations(value *models.Annotations) *NotificationChannelUpdate {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *NotificationChannelUpdateOne) SetOrClearAnnotations(value *models.Annotations) *NotificationChannelUpdateOne {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *NotificationChannelUpdate) SetOrClearMetadata(value *map[string]string) *NotificationChannelUpdate {
+	if value == nil {
+		return u.ClearMetadata()
+	}
+	return u.SetMetadata(*value)
+}
+
+func (u *NotificationChannelUpdateOne) SetOrClearMetadata(value *map[string]string) *NotificationChannelUpdateOne {
+	if value == nil {
+		return u.ClearMetadata()
+	}
+	return u.SetMetadata(*value)
+}
+
 func (u *NotificationChannelUpdate) SetOrClearDisabled(value *bool) *NotificationChannelUpdate {
 	if value == nil {
 		return u.ClearDisabled()
@@ -2351,6 +2479,20 @@ func (u *NotificationEventUpdateOne) SetOrClearAnnotations(value *models.Annotat
 	return u.SetAnnotations(*value)
 }
 
+func (u *NotificationEventDeliveryStatusUpdate) SetOrClearAnnotations(value *models.Annotations) *NotificationEventDeliveryStatusUpdate {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *NotificationEventDeliveryStatusUpdateOne) SetOrClearAnnotations(value *models.Annotations) *NotificationEventDeliveryStatusUpdateOne {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
 func (u *NotificationEventDeliveryStatusUpdate) SetOrClearReason(value *string) *NotificationEventDeliveryStatusUpdate {
 	if value == nil {
 		return u.ClearReason()
@@ -2365,6 +2507,34 @@ func (u *NotificationEventDeliveryStatusUpdateOne) SetOrClearReason(value *strin
 	return u.SetReason(*value)
 }
 
+func (u *NotificationEventDeliveryStatusUpdate) SetOrClearNextAttemptAt(value *time.Time) *NotificationEventDeliveryStatusUpdate {
+	if value == nil {
+		return u.ClearNextAttemptAt()
+	}
+	return u.SetNextAttemptAt(*value)
+}
+
+func (u *NotificationEventDeliveryStatusUpdateOne) SetOrClearNextAttemptAt(value *time.Time) *NotificationEventDeliveryStatusUpdateOne {
+	if value == nil {
+		return u.ClearNextAttemptAt()
+	}
+	return u.SetNextAttemptAt(*value)
+}
+
+func (u *NotificationEventDeliveryStatusUpdate) SetOrClearAttempts(value *[]notification.EventDeliveryAttempt) *NotificationEventDeliveryStatusUpdate {
+	if value == nil {
+		return u.ClearAttempts()
+	}
+	return u.SetAttempts(*value)
+}
+
+func (u *NotificationEventDeliveryStatusUpdateOne) SetOrClearAttempts(value *[]notification.EventDeliveryAttempt) *NotificationEventDeliveryStatusUpdateOne {
+	if value == nil {
+		return u.ClearAttempts()
+	}
+	return u.SetAttempts(*value)
+}
+
 func (u *NotificationRuleUpdate) SetOrClearDeletedAt(value *time.Time) *NotificationRuleUpdate {
 	if value == nil {
 		return u.ClearDeletedAt()
@@ -2377,6 +2547,34 @@ func (u *NotificationRuleUpdateOne) SetOrClearDeletedAt(value *time.Time) *Notif
 		return u.ClearDeletedAt()
 	}
 	return u.SetDeletedAt(*value)
+}
+
+func (u *NotificationRuleUpdate) SetOrClearAnnotations(value *models.Annotations) *NotificationRuleUpdate {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *NotificationRuleUpdateOne) SetOrClearAnnotations(value *models.Annotations) *NotificationRuleUpdateOne {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *NotificationRuleUpdate) SetOrClearMetadata(value *map[string]string) *NotificationRuleUpdate {
+	if value == nil {
+		return u.ClearMetadata()
+	}
+	return u.SetMetadata(*value)
+}
+
+func (u *NotificationRuleUpdateOne) SetOrClearMetadata(value *map[string]string) *NotificationRuleUpdateOne {
+	if value == nil {
+		return u.ClearMetadata()
+	}
+	return u.SetMetadata(*value)
 }
 
 func (u *NotificationRuleUpdate) SetOrClearDisabled(value *bool) *NotificationRuleUpdate {
@@ -2771,6 +2969,20 @@ func (u *SubjectUpdateOne) SetOrClearMetadata(value *map[string]interface{}) *Su
 	return u.SetMetadata(*value)
 }
 
+func (u *SubscriptionUpdate) SetOrClearAnnotations(value *models.Annotations) *SubscriptionUpdate {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
+func (u *SubscriptionUpdateOne) SetOrClearAnnotations(value *models.Annotations) *SubscriptionUpdateOne {
+	if value == nil {
+		return u.ClearAnnotations()
+	}
+	return u.SetAnnotations(*value)
+}
+
 func (u *SubscriptionUpdate) SetOrClearDeletedAt(value *time.Time) *SubscriptionUpdate {
 	if value == nil {
 		return u.ClearDeletedAt()
@@ -2881,6 +3093,20 @@ func (u *SubscriptionAddonQuantityUpdateOne) SetOrClearDeletedAt(value *time.Tim
 		return u.ClearDeletedAt()
 	}
 	return u.SetDeletedAt(*value)
+}
+
+func (u *SubscriptionBillingSyncStateUpdate) SetOrClearNextSyncAfter(value *time.Time) *SubscriptionBillingSyncStateUpdate {
+	if value == nil {
+		return u.ClearNextSyncAfter()
+	}
+	return u.SetNextSyncAfter(*value)
+}
+
+func (u *SubscriptionBillingSyncStateUpdateOne) SetOrClearNextSyncAfter(value *time.Time) *SubscriptionBillingSyncStateUpdateOne {
+	if value == nil {
+		return u.ClearNextSyncAfter()
+	}
+	return u.SetNextSyncAfter(*value)
 }
 
 func (u *SubscriptionItemUpdate) SetOrClearDeletedAt(value *time.Time) *SubscriptionItemUpdate {

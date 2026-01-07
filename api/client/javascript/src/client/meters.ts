@@ -1,7 +1,7 @@
-import { transformResponse } from './utils.js'
+import type { Client } from 'openapi-fetch'
 import type { RequestOptions } from './common.js'
 import type { MeterCreate, operations, paths } from './schemas.js'
-import type { Client } from 'openapi-fetch'
+import { transformResponse } from './utils.js'
 
 /**
  * Meters
@@ -33,7 +33,7 @@ export class Meters {
    */
   public async get(
     idOrSlug: operations['getMeter']['parameters']['path']['meterIdOrSlug'],
-    options?: RequestOptions
+    options?: RequestOptions,
   ) {
     const resp = await this.client.GET('/api/v1/meters/{meterIdOrSlug}', {
       params: {
@@ -70,7 +70,7 @@ export class Meters {
   public async query(
     idOrSlug: operations['queryMeter']['parameters']['path']['meterIdOrSlug'],
     query?: operations['queryMeter']['parameters']['query'],
-    options?: RequestOptions
+    options?: RequestOptions,
   ) {
     const resp = await this.client.GET('/api/v1/meters/{meterIdOrSlug}/query', {
       headers: {
@@ -86,7 +86,7 @@ export class Meters {
     })
 
     return transformResponse(
-      resp
+      resp,
     ) as operations['queryMeter']['responses']['200']['content']['application/json']
   }
 
@@ -100,7 +100,7 @@ export class Meters {
   public async update(
     idOrSlug: operations['updateMeter']['parameters']['path']['meterIdOrSlug'],
     meter: operations['updateMeter']['requestBody']['content']['application/json'],
-    options?: RequestOptions
+    options?: RequestOptions,
   ) {
     const resp = await this.client.PUT('/api/v1/meters/{meterIdOrSlug}', {
       body: meter,
@@ -123,7 +123,7 @@ export class Meters {
    */
   public async delete(
     idOrSlug: operations['deleteMeter']['parameters']['path']['meterIdOrSlug'],
-    options?: RequestOptions
+    options?: RequestOptions,
   ) {
     const resp = await this.client.DELETE('/api/v1/meters/{meterIdOrSlug}', {
       params: {
@@ -133,6 +133,70 @@ export class Meters {
       },
       ...options,
     })
+
+    return transformResponse(resp)
+  }
+
+  /**
+   * List meter group-by values
+   * @description List all values for a specific group-by key in a meter.
+   * @param idOrSlug - The ID or slug of the meter
+   * @param groupByKey - The group-by key to list values for
+   * @param query - The query parameters
+   * @param options - Optional request options
+   * @returns The list of group-by values
+   */
+  public async listGroupByValues(
+    idOrSlug: operations['listMeterGroupByValues']['parameters']['path']['meterIdOrSlug'],
+    groupByKey: operations['listMeterGroupByValues']['parameters']['path']['groupByKey'],
+    query?: operations['listMeterGroupByValues']['parameters']['query'],
+    options?: RequestOptions,
+  ) {
+    const resp = await this.client.GET(
+      '/api/v1/meters/{meterIdOrSlug}/group-by/{groupByKey}/values',
+      {
+        params: {
+          path: {
+            groupByKey,
+            meterIdOrSlug: idOrSlug,
+          },
+          query,
+        },
+        ...options,
+      },
+    )
+
+    return transformResponse(resp)
+  }
+
+  /**
+   * Query usage data for a meter by ID or slug using POST
+   * @description Query meter using POST method. This is useful for complex queries that exceed URL length limits.
+   * @param idOrSlug - The ID or slug of the meter
+   * @param body - The query body parameters
+   * @param options - Optional request options
+   * @returns The meter data
+   */
+  public async queryPost(
+    idOrSlug: operations['queryMeterPost']['parameters']['path']['meterIdOrSlug'],
+    body: operations['queryMeterPost']['requestBody']['content']['application/json'],
+    options?: RequestOptions,
+  ) {
+    const resp = await this.client.POST(
+      '/api/v1/meters/{meterIdOrSlug}/query',
+      {
+        body,
+        headers: {
+          Accept: 'application/json',
+        },
+        params: {
+          path: {
+            meterIdOrSlug: idOrSlug,
+          },
+        },
+        ...options,
+      },
+    )
 
     return transformResponse(resp)
   }

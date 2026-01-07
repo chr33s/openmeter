@@ -4,7 +4,6 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/entsql"
-	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 
@@ -47,6 +46,15 @@ func (Subject) Indexes() []ent.Index {
 			Annotations(
 				entsql.IndexWhere("deleted_at IS NULL"),
 			).Unique(),
+		index.Fields("namespace", "key", "deleted_at").
+			Annotations(
+				entsql.IndexWhere("deleted_at IS NULL"),
+			).Unique().
+			StorageKey("subject_namespace_key_deleted_at_unique"),
+		// This is same as above, but allows for optimizing the most common subject queries, the previous one is only used to
+		// ensure uniqueness of the subject key.
+		index.Fields("namespace", "key", "deleted_at"),
+		index.Fields("namespace", "id").Unique(),
 		// we sort by display name
 		index.Fields("display_name"),
 		// so that we can fetch the recently created subjects, id is there for stable pagination
@@ -56,7 +64,5 @@ func (Subject) Indexes() []ent.Index {
 
 // Edges of the Subject.
 func (Subject) Edges() []ent.Edge {
-	return []ent.Edge{
-		edge.To("entitlements", Entitlement.Type),
-	}
+	return []ent.Edge{}
 }

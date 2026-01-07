@@ -3,13 +3,11 @@ package billing
 import (
 	"errors"
 	"fmt"
-	"reflect"
 
 	"github.com/alpacahq/alpacadecimal"
 	"github.com/samber/lo"
 
 	"github.com/openmeterio/openmeter/pkg/currencyx"
-	"github.com/openmeterio/openmeter/pkg/equal"
 	"github.com/openmeterio/openmeter/pkg/models"
 	"github.com/openmeterio/openmeter/pkg/slicesx"
 )
@@ -37,7 +35,7 @@ func (i LineDiscountBase) Validate() error {
 }
 
 func (i LineDiscountBase) Equal(other LineDiscountBase) bool {
-	return reflect.DeepEqual(i, other)
+	return deriveEqualLineDiscountBase(&i, &other)
 }
 
 func (i LineDiscountBase) Clone() LineDiscountBase {
@@ -46,6 +44,10 @@ func (i LineDiscountBase) Clone() LineDiscountBase {
 
 func (i LineDiscountBase) GetChildUniqueReferenceID() *string {
 	return i.ChildUniqueReferenceID
+}
+
+func (i LineDiscountBase) GetDescription() *string {
+	return i.Description
 }
 
 type LineDiscountBaseManaged struct {
@@ -78,19 +80,7 @@ func (i AmountLineDiscount) Validate() error {
 }
 
 func (i AmountLineDiscount) Equal(other AmountLineDiscount) bool {
-	if !i.LineDiscountBase.Equal(other.LineDiscountBase) {
-		return false
-	}
-
-	if !i.Amount.Equal(other.Amount) {
-		return false
-	}
-
-	if !i.RoundingAmount.Equal(other.RoundingAmount) {
-		return false
-	}
-
-	return true
+	return deriveEqualAmountLineDiscount(&i, &other)
 }
 
 func (i AmountLineDiscount) Clone() AmountLineDiscount {
@@ -117,15 +107,7 @@ func (i AmountLineDiscountManaged) Validate() error {
 }
 
 func (i AmountLineDiscountManaged) Equal(other AmountLineDiscountManaged) bool {
-	if !i.ManagedModelWithID.Equal(other.ManagedModelWithID) {
-		return false
-	}
-
-	if !i.AmountLineDiscount.Equal(other.AmountLineDiscount) {
-		return false
-	}
-
-	return true
+	return deriveEqualAmountLineDiscountManaged(&i, &other)
 }
 
 func (i AmountLineDiscountManaged) Clone() AmountLineDiscountManaged {
@@ -202,6 +184,22 @@ func (i AmountLineDiscountsManaged) Mutate(mutator func(AmountLineDiscountManage
 	return cloned, nil
 }
 
+func (i AmountLineDiscountsManaged) Validate() error {
+	var errs []error
+
+	for _, amount := range i {
+		if err := amount.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("amount[%s]: %w", amount.ID, err))
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+func (i AmountLineDiscountsManaged) ReuseIDsFrom(existingItems AmountLineDiscountsManaged) AmountLineDiscountsManaged {
+	return ReuseIDsFrom(i, existingItems)
+}
+
 type UsageLineDiscount struct {
 	LineDiscountBase `json:",inline"`
 
@@ -228,19 +226,7 @@ func (i UsageLineDiscount) Validate() error {
 }
 
 func (i UsageLineDiscount) Equal(other UsageLineDiscount) bool {
-	if !i.LineDiscountBase.Equal(other.LineDiscountBase) {
-		return false
-	}
-
-	if !i.Quantity.Equal(other.Quantity) {
-		return false
-	}
-
-	if !equal.PtrEqual(i.PreLinePeriodQuantity, other.PreLinePeriodQuantity) {
-		return false
-	}
-
-	return true
+	return deriveEqualUsageLineDiscount(&i, &other)
 }
 
 func (i UsageLineDiscount) Clone() UsageLineDiscount {
@@ -267,15 +253,7 @@ func (i UsageLineDiscountManaged) Validate() error {
 }
 
 func (i UsageLineDiscountManaged) Equal(other UsageLineDiscountManaged) bool {
-	if !i.ManagedModelWithID.Equal(other.ManagedModelWithID) {
-		return false
-	}
-
-	if !i.UsageLineDiscount.Equal(other.UsageLineDiscount) {
-		return false
-	}
-
-	return true
+	return deriveEqualUsageLineDiscountManaged(&i, &other)
 }
 
 func (i UsageLineDiscountManaged) Clone() UsageLineDiscountManaged {
@@ -390,21 +368,11 @@ func (i LineDiscounts) Validate() error {
 	return models.NewNillableGenericValidationError(errors.Join(errs...))
 }
 
-func (i LineDiscounts) ReuseIDsFrom(existingItems LineDiscounts) (LineDiscounts, error) {
-	amounts, err := ReuseIDsFrom(i.Amount, existingItems.Amount)
-	if err != nil {
-		return LineDiscounts{}, err
-	}
-
-	usages, err := ReuseIDsFrom(i.Usage, existingItems.Usage)
-	if err != nil {
-		return LineDiscounts{}, err
-	}
-
+func (i LineDiscounts) ReuseIDsFrom(existingItems LineDiscounts) LineDiscounts {
 	return LineDiscounts{
-		Amount: amounts,
-		Usage:  usages,
-	}, nil
+		Amount: ReuseIDsFrom(i.Amount, existingItems.Amount),
+		Usage:  ReuseIDsFrom(i.Usage, existingItems.Usage),
+	}
 }
 
 func (i LineDiscounts) IsEmpty() bool {
@@ -418,9 +386,9 @@ type entityWithReusableIDs[T any] interface {
 }
 
 // ReuseIDsFrom reuses the IDs of the existing discounts by child unique reference ID.
-func ReuseIDsFrom[T entityWithReusableIDs[T]](currentItems []T, dbExistingItems []T) ([]T, error) {
+func ReuseIDsFrom[T entityWithReusableIDs[T]](currentItems []T, dbExistingItems []T) []T {
 	if len(currentItems) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	existingItemsByUniqueReference := lo.GroupBy(
@@ -432,19 +400,19 @@ func ReuseIDsFrom[T entityWithReusableIDs[T]](currentItems []T, dbExistingItems 
 		},
 	)
 
-	discountsWithIDReuse, err := slicesx.MapWithErr(currentItems, func(discount T) (T, error) {
+	discountsWithIDReuse := lo.Map(currentItems, func(discount T, _ int) T {
 		childUniqueReferenceID := discount.GetChildUniqueReferenceID()
 
 		// We should not reuse the ID if they are for a different child unique reference ID
 		if childUniqueReferenceID == nil {
-			return discount, nil
+			return discount
 		}
 
 		existingItems, ok := existingItemsByUniqueReference[*childUniqueReferenceID]
 		if !ok {
 			// We did not find any existing items for this child unique reference ID,
 			// let's create a new entry in the DB.
-			return discount, nil
+			return discount
 		}
 
 		existingManagedFields := existingItems[0].GetManagedFieldsWithID()
@@ -456,11 +424,8 @@ func ReuseIDsFrom[T entityWithReusableIDs[T]](currentItems []T, dbExistingItems 
 				// UpdatedAt is updated by the adapter layer
 				// DeletedAt should not be set, to ensure that we are not carrying over soft-deletion flags
 			},
-		}), nil
+		})
 	})
-	if err != nil {
-		return nil, err
-	}
 
-	return slicesx.EmptyAsNil(discountsWithIDReuse), nil
+	return slicesx.EmptyAsNil(discountsWithIDReuse)
 }

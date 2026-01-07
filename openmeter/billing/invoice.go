@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -283,6 +282,8 @@ type InvoiceBase struct {
 	QuantitySnapshotedAt *time.Time `json:"quantitySnapshotedAt,omitempty"`
 
 	CollectionAt *time.Time `json:"collectionAt,omitempty"`
+	// PaymentProcessingEnteredAt stores when the invoice first entered payment processing
+	PaymentProcessingEnteredAt *time.Time `json:"paymentProcessingEnteredAt,omitempty"`
 
 	// Customer is either a snapshot of the contact information of the customer at the time of invoice being sent
 	// or the data from the customer entity (draft state)
@@ -326,6 +327,14 @@ func (i InvoiceBase) Validate() error {
 	}
 
 	return outErr
+}
+
+func (i InvoiceBase) DefaultCollectionAtForStandardInvoice() time.Time {
+	if i.CollectionAt == nil {
+		return i.CreatedAt
+	}
+
+	return lo.FromPtr(i.CollectionAt)
 }
 
 type Invoice struct {
@@ -404,45 +413,28 @@ func (i Invoice) RemoveMetaForCompare() Invoice {
 	return invoice
 }
 
-func (i *Invoice) FlattenLinesByID() map[string]*Line {
-	out := make(map[string]*Line, len(i.Lines.OrEmpty()))
+// getLeafLines returns the leaf lines
+func (i *Invoice) getLeafLines() DetailedLines {
+	out := []DetailedLine{}
 
 	for _, line := range i.Lines.OrEmpty() {
-		out[line.ID] = line
+		// Skip non leaf nodes
 
-		for _, child := range line.Children {
-			out[child.ID] = child
-		}
+		out = append(out, line.DetailedLines...)
 	}
 
 	return out
 }
 
-// getLeafLines returns the leaf lines
-func (i *Invoice) getLeafLines() []*Line {
-	var leafLines []*Line
-
-	for _, line := range i.FlattenLinesByID() {
-		// Skip non leaf nodes
-		if line.Type != InvoiceLineTypeFee {
-			continue
-		}
-
-		leafLines = append(leafLines, line)
-	}
-
-	return leafLines
-}
-
 // GetLeafLinesWithConsolidatedTaxBehavior returns the leaf lines with the tax behavior set to the invoice's tax behavior
 // unless the line already has a tax behavior set.
-func (i *Invoice) GetLeafLinesWithConsolidatedTaxBehavior() []*Line {
+func (i *Invoice) GetLeafLinesWithConsolidatedTaxBehavior() DetailedLines {
 	leafLines := i.getLeafLines()
 	if i.Workflow.Config.Invoicing.DefaultTaxConfig == nil {
 		return leafLines
 	}
 
-	return lo.Map(leafLines, func(line *Line, _ int) *Line {
+	return lo.Map(leafLines, func(line DetailedLine, _ int) DetailedLine {
 		line.TaxConfig = productcatalog.MergeTaxConfigs(i.Workflow.Config.Invoicing.DefaultTaxConfig, line.TaxConfig)
 		return line
 	})
@@ -473,55 +465,11 @@ func (i *Invoice) SortLines() {
 		return
 	}
 
-	lines := i.Lines.OrEmpty()
-
-	sortLines(lines)
-
-	i.Lines = NewInvoiceLines(lines)
-}
-
-func sortLines(lines []*Line) {
-	sort.Slice(lines, func(a, b int) bool {
-		lineA := lines[a]
-		lineB := lines[b]
-
-		// If both lines are flat fee lines, we sort them by index if possible
-		if lineA.Type == InvoiceLineTypeFee && lineB.Type == InvoiceLineTypeFee {
-			if lineA.FlatFee.Index != nil && lineB.FlatFee.Index != nil {
-				return *lineA.FlatFee.Index < *lineB.FlatFee.Index
-			}
-
-			if lineA.FlatFee.Index != nil {
-				return true
-			}
-
-			if lineB.FlatFee.Index != nil {
-				return false
-			}
-		}
-
-		if nameOrder := strings.Compare(lineA.Name, lineB.Name); nameOrder != 0 {
-			return nameOrder < 0
-		}
-
-		if !lineA.Period.Start.Equal(lineB.Period.Start) {
-			return lineA.Period.Start.Before(lineB.Period.Start)
-		}
-
-		return strings.Compare(lineA.ID, lineB.ID) < 0
-	})
-
-	for idx, line := range lines {
-		if line.Type == InvoiceLineTypeUsageBased {
-			sortLines(line.Children)
-		}
-
-		lines[idx] = line
-	}
+	i.Lines.Sort()
 }
 
 type InvoiceLines struct {
-	mo.Option[[]*Line]
+	mo.Option[Lines]
 }
 
 func NewInvoiceLines(children []*Line) InvoiceLines {
@@ -530,7 +478,7 @@ func NewInvoiceLines(children []*Line) InvoiceLines {
 		children = nil
 	}
 
-	return InvoiceLines{mo.Some(children)}
+	return InvoiceLines{mo.Some(Lines(children))}
 }
 
 func (i InvoiceLines) Validate() error {
@@ -546,9 +494,7 @@ func (c InvoiceLines) Map(fn func(*Line) *Line) InvoiceLines {
 
 	return InvoiceLines{
 		mo.Some(
-			lo.Map(c.OrEmpty(), func(item *Line, _ int) *Line {
-				return fn(item)
-			}),
+			c.OrEmpty().Map(fn),
 		),
 	}
 }
@@ -586,10 +532,20 @@ func (c *InvoiceLines) ReplaceByID(id string, newLine *Line) bool {
 	return false
 }
 
+func (c *InvoiceLines) Sort() {
+	if c.IsAbsent() {
+		return
+	}
+
+	lines := c.OrEmpty()
+	lines.Sort()
+	c.Option = mo.Some(lines)
+}
+
 // NonDeletedLineCount returns the number of lines that are not deleted and have a valid status (e.g. we are ignoring split lines)
 func (c InvoiceLines) NonDeletedLineCount() int {
 	return lo.CountBy(c.OrEmpty(), func(l *Line) bool {
-		return l.DeletedAt == nil && l.Status == InvoiceLineStatusValid
+		return l.DeletedAt == nil
 	})
 }
 
@@ -648,14 +604,14 @@ type InvoiceStatusDetails struct {
 }
 
 const (
-	CustomerUsageAttributionTypeVersion = "customer_usage_attribution.v1"
+	CustomerUsageAttributionTypeVersionV1 = "customer_usage_attribution.v1"
+	CustomerUsageAttributionTypeVersionV2 = "customer_usage_attribution.v2"
 )
 
 type (
-	CustomerUsageAttribution          = customer.CustomerUsageAttribution
 	VersionedCustomerUsageAttribution struct {
-		CustomerUsageAttribution `json:",inline"`
-		Type                     string `json:"type"`
+		streaming.CustomerUsageAttribution `json:",inline"`
+		Type                               string `json:"type"`
 	}
 )
 
@@ -664,35 +620,43 @@ type (
 var _ streaming.Customer = &InvoiceCustomer{}
 
 // NewInvoiceCustomer creates a new InvoiceCustomer from a customer.Customer
-func NewInvoiceCustomer(customer customer.Customer) InvoiceCustomer {
-	return InvoiceCustomer{
-		Key:              customer.Key,
-		CustomerID:       customer.ID,
-		Name:             customer.Name,
-		BillingAddress:   customer.BillingAddress,
-		UsageAttribution: customer.UsageAttribution,
+func NewInvoiceCustomer(cust customer.Customer) InvoiceCustomer {
+	ic := InvoiceCustomer{
+		Key:            cust.Key,
+		CustomerID:     cust.ID,
+		Name:           cust.Name,
+		BillingAddress: cust.BillingAddress,
 	}
+
+	// If the customer has a usage attribution, we add it to the invoice customer
+	// We use the validator but this is not an error, we allow non usage based invoices without usage attribution.
+	if err := cust.GetUsageAttribution().Validate(); err == nil {
+		ic.UsageAttribution = lo.ToPtr(cust.GetUsageAttribution())
+	}
+
+	return ic
 }
 
 // InvoiceCustomer represents a customer that is used in an invoice
 // We use a specific model as we snapshot the customer at the time of invoice creation,
 // and we don't want to modify the customer entity after it has been sent to the customer.
 type InvoiceCustomer struct {
-	Key              *string                  `json:"key,omitempty"`
-	CustomerID       string                   `json:"customerId,omitempty"`
-	Name             string                   `json:"name"`
-	BillingAddress   *models.Address          `json:"billingAddress,omitempty"`
-	UsageAttribution CustomerUsageAttribution `json:"usageAttribution"`
+	Key              *string                             `json:"key,omitempty"`
+	CustomerID       string                              `json:"customerId,omitempty"`
+	Name             string                              `json:"name"`
+	BillingAddress   *models.Address                     `json:"billingAddress,omitempty"`
+	UsageAttribution *streaming.CustomerUsageAttribution `json:"usageAttribution,omitempty"`
 }
 
 // GetUsageAttribution returns the customer usage attribution
 // implementing the streaming.CustomerUsageAttribution interface
 func (c InvoiceCustomer) GetUsageAttribution() streaming.CustomerUsageAttribution {
-	return streaming.CustomerUsageAttribution{
-		ID:          c.CustomerID,
-		Key:         c.Key,
-		SubjectKeys: c.UsageAttribution.SubjectKeys,
+	subjectKeys := []string{}
+	if c.UsageAttribution != nil {
+		subjectKeys = c.UsageAttribution.SubjectKeys
 	}
+
+	return streaming.NewCustomerUsageAttribution(c.CustomerID, c.Key, subjectKeys)
 }
 
 // Validate validates the invoice customer
@@ -909,9 +873,10 @@ type CreateInvoiceAdapterInput struct {
 	Metadata  map[string]string
 	IssuedAt  time.Time
 
-	Type        InvoiceType
-	Description *string
-	DueAt       *time.Time
+	Type         InvoiceType
+	Description  *string
+	DueAt        *time.Time
+	CollectionAt *time.Time
 
 	Totals Totals
 }
@@ -951,6 +916,10 @@ func (c CreateInvoiceAdapterInput) Validate() error {
 
 	if c.Number == "" {
 		return errors.New("invoice number is required")
+	}
+
+	if c.CollectionAt != nil && c.Status != InvoiceStatusGathering {
+		return errors.New("setting collectionAt is only allowed when creating gathering invoices")
 	}
 
 	return nil

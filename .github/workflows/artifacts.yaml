@@ -48,7 +48,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Depot CLI
         uses: depot/setup-action@b0b1ea4f69e92ebf5dea3f8713a1b0c37b2126a5 # v1.6.0
@@ -59,7 +61,7 @@ jobs:
 
       - name: Gather build metadata
         id: meta
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ steps.image-name.outputs.value }}
           flavor: |
@@ -72,7 +74,7 @@ jobs:
             type=ref,event=branch,suffix=-{{sha}}-{{date 'X'}},enable={{is_default_branch}}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -95,14 +97,19 @@ jobs:
 
       - name: Set image ref
         id: image-ref
-        run: echo "value=${{ steps.image-name.outputs.value }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+        run: echo "value=${STEPS_IMAGE_NAME_OUTPUTS_VALUE}@${STEPS_BUILD_OUTPUTS_DIGEST}" >> "$GITHUB_OUTPUT"
+        env:
+          STEPS_IMAGE_NAME_OUTPUTS_VALUE: ${{ steps.image-name.outputs.value }}
+          STEPS_BUILD_OUTPUTS_DIGEST: ${{ steps.build.outputs.digest }}
 
       - name: Retrieve pull token
         id: pull-token
         run: |
-          PULL_TOKEN="$(depot pull-token --project ${{ vars.DEPOT_PROJECT }})"
+          PULL_TOKEN="$(depot pull-token --project ${VARS_DEPOT_PROJECT})"
           echo "token=$PULL_TOKEN" >> "$GITHUB_OUTPUT"
           echo "::add-mask::$PULL_TOKEN"
+        env:
+          VARS_DEPOT_PROJECT: ${{ vars.DEPOT_PROJECT }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
@@ -116,14 +123,14 @@ jobs:
           TRIVY_DB_REPOSITORY: ghcr.io/openmeterio/trivy-db:2
 
       - name: Upload Trivy scan results as artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: "[${{ github.job }}] Trivy scan results"
           path: trivy-results.sarif
           retention-days: 5
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
+        uses: github/codeql-action/upload-sarif@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # v3.29.5
         with:
           sarif_file: trivy-results.sarif
 
@@ -145,7 +152,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Depot CLI
         uses: depot/setup-action@b0b1ea4f69e92ebf5dea3f8713a1b0c37b2126a5 # v1.6.0
@@ -156,7 +165,7 @@ jobs:
 
       - name: Gather build metadata
         id: meta
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f # v5.8.0
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ steps.image-name.outputs.value }}
           flavor: |
@@ -169,7 +178,7 @@ jobs:
             type=ref,event=branch,suffix=-{{sha}}-{{date 'X'}},enable={{is_default_branch}}
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -193,14 +202,19 @@ jobs:
 
       - name: Set image ref
         id: image-ref
-        run: echo "value=${{ steps.image-name.outputs.value }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+        run: echo "value=${STEPS_IMAGE_NAME_OUTPUTS_VALUE}@${STEPS_BUILD_OUTPUTS_DIGEST}" >> "$GITHUB_OUTPUT"
+        env:
+          STEPS_IMAGE_NAME_OUTPUTS_VALUE: ${{ steps.image-name.outputs.value }}
+          STEPS_BUILD_OUTPUTS_DIGEST: ${{ steps.build.outputs.digest }}
 
       - name: Retrieve pull token
         id: pull-token
         run: |
-          PULL_TOKEN="$(depot pull-token --project ${{ vars.DEPOT_PROJECT }})"
+          PULL_TOKEN="$(depot pull-token --project ${VARS_DEPOT_PROJECT})"
           echo "token=$PULL_TOKEN" >> "$GITHUB_OUTPUT"
           echo "::add-mask::$PULL_TOKEN"
+        env:
+          VARS_DEPOT_PROJECT: ${{ vars.DEPOT_PROJECT }}
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # 0.33.1
@@ -214,13 +228,13 @@ jobs:
           TRIVY_DB_REPOSITORY: ghcr.io/openmeterio/trivy-db:2
 
       - name: Upload Trivy scan results as artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: "[${{ github.job }}] Trivy scan results"
           path: trivy-results.sarif
           retention-days: 5
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@192325c86100d080feab897ff886c34abd4c83a3 # v3.29.5
+        uses: github/codeql-action/upload-sarif@5d4e8d1aca955e8d8589aabd499c5cae939e33c7 # v3.29.5
         with:
           sarif_file: trivy-results.sarif

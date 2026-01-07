@@ -15,6 +15,7 @@ import (
 	grantrepo "github.com/openmeterio/openmeter/openmeter/credit/adapter"
 	"github.com/openmeterio/openmeter/openmeter/credit/balance"
 	"github.com/openmeterio/openmeter/openmeter/credit/grant"
+	credithook "github.com/openmeterio/openmeter/openmeter/credit/hook"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	customeradapter "github.com/openmeterio/openmeter/openmeter/customer/adapter"
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
@@ -199,6 +200,7 @@ func setupDependencies(t *testing.T) Dependencies {
 
 	entitlementConnector.RegisterHooks(
 		entitlementsubscriptionhook.NewEntitlementSubscriptionHook(entitlementsubscriptionhook.EntitlementSubscriptionHookConfig{}),
+		credithook.NewEntitlementHook(grantRepo),
 	)
 
 	subjectRepo, err := subjectadapter.New(dbClient)
@@ -254,7 +256,7 @@ func createCustomerAndSubject(t *testing.T, subjectService subject.Service, cust
 		Namespace: ns,
 		CustomerMutate: customer.CustomerMutate{
 			Key: lo.ToPtr(key),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{key},
 			},
 			Name: name,

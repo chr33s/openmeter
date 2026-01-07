@@ -32,7 +32,6 @@ var BalanceWorker = wire.NewSet(
 	NewBalanceWorkerOptions,
 	NewBalanceWorker,
 	BalanceWorkerGroup,
-	NewBalanceWorkerFilterStateStorage,
 )
 
 var BalanceWorkerAdapter = wire.NewSet(
@@ -50,7 +49,7 @@ func NewBalanceWorkerEntitlementRepo(db *db.Client) BalanceWorkerEntitlementRepo
 	return entitlementadapter.NewPostgresEntitlementRepo(db)
 }
 
-func BalanceWorkerProvisionTopics(conf config.BalanceWorkerConfiguration) []pkgkafka.TopicConfig {
+func BalanceWorkerProvisionTopics(conf config.BalanceWorkerConfiguration, eventsConfig config.EventsConfiguration) []pkgkafka.TopicConfig {
 	var provisionTopics []pkgkafka.TopicConfig
 
 	if conf.DLQ.AutoProvision.Enabled {
@@ -58,6 +57,13 @@ func BalanceWorkerProvisionTopics(conf config.BalanceWorkerConfiguration) []pkgk
 			Name:          conf.DLQ.Topic,
 			Partitions:    conf.DLQ.AutoProvision.Partitions,
 			RetentionTime: pkgkafka.TimeDurationMilliSeconds(conf.DLQ.AutoProvision.Retention),
+		})
+	}
+
+	if eventsConfig.BalanceWorkerEvents.AutoProvision.Enabled {
+		provisionTopics = append(provisionTopics, pkgkafka.TopicConfig{
+			Name:       eventsConfig.BalanceWorkerEvents.Topic,
+			Partitions: eventsConfig.BalanceWorkerEvents.AutoProvision.Partitions,
 		})
 	}
 
@@ -87,21 +93,22 @@ func NewBalanceWorkerOptions(
 	subjectService subject.Service,
 	customerService customer.Service,
 	logger *slog.Logger,
-	filterStateStorage balanceworker.FilterStateStorage,
+	balanceWorkerConfiguration config.BalanceWorkerConfiguration,
 ) balanceworker.WorkerOptions {
 	return balanceworker.WorkerOptions{
-		SystemEventsTopic:   eventConfig.SystemEvents.Topic,
-		IngestEventsTopic:   eventConfig.IngestEvents.Topic,
-		Router:              routerOptions,
-		EventBus:            eventBus,
-		Entitlement:         entitlements,
-		Repo:                repo,
-		Subject:             subjectService,
-		Customer:            customerService,
-		Logger:              logger,
-		MetricMeter:         routerOptions.MetricMeter,
-		NotificationService: notificationService,
-		FilterStateStorage:  filterStateStorage,
+		SystemEventsTopic:        eventConfig.SystemEvents.Topic,
+		IngestEventsTopic:        eventConfig.IngestEvents.Topic,
+		BalanceWorkerEventsTopic: eventConfig.BalanceWorkerEvents.Topic,
+		Router:                   routerOptions,
+		EventBus:                 eventBus,
+		Entitlement:              entitlements,
+		Repo:                     repo,
+		Subject:                  subjectService,
+		Customer:                 customerService,
+		Logger:                   logger,
+		MetricMeter:              routerOptions.MetricMeter,
+		NotificationService:      notificationService,
+		HighWatermarkCacheSize:   balanceWorkerConfiguration.StateStorage.HighWatermarkCache.LRUCacheSize,
 	}
 }
 
@@ -112,30 +119,6 @@ func NewBalanceWorker(workerOptions balanceworker.WorkerOptions) (*balanceworker
 	}
 
 	return worker, nil
-}
-
-func NewBalanceWorkerFilterStateStorage(conf config.BalanceWorkerConfiguration) (balanceworker.FilterStateStorage, error) {
-	switch conf.StateStorage.Driver {
-	case config.BalanceWorkerStateStorageDriverRedis:
-		redis, err := conf.StateStorage.GetRedisBackendConfiguration()
-		if err != nil {
-			return balanceworker.FilterStateStorage{}, fmt.Errorf("failed to get redis backend configuration: %w", err)
-		}
-
-		client, err := redis.NewClient()
-		if err != nil {
-			return balanceworker.FilterStateStorage{}, fmt.Errorf("failed to create redis client: %w", err)
-		}
-
-		return balanceworker.NewFilterStateStorage(balanceworker.FilterStateStorageRedis{
-			Client:     client,
-			Expiration: redis.Expiration,
-		})
-	case config.BalanceWorkerStateStorageDriverInMemory:
-		return balanceworker.NewFilterStateStorage(balanceworker.FilterStateStorageInMemory{})
-	default:
-		return balanceworker.FilterStateStorage{}, fmt.Errorf("unsupported state storage driver: %s", conf.StateStorage.Driver)
-	}
 }
 
 func BalanceWorkerGroup(

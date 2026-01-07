@@ -5,7 +5,7 @@ import "@typespec/openapi3";
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
 
-namespace OpenMeter.Notification;
+namespace OpenMeter;
 
 /**
  * Type of the notification event.
@@ -51,11 +51,109 @@ model NotificationEventDeliveryStatus {
   updatedAt: DateTime;
 
   /**
-   * Notification channel the delivery sattus associated with.
+   * Notification channel the delivery status associated with.
    */
   @visibility(Lifecycle.Read)
   @summary("Notification Channel")
   channel: NotificationChannelMeta;
+
+  /**
+   * Set of key-value pairs managed by the system. Cannot be modified by user.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Annotations")
+  annotations?: Annotations;
+
+  /**
+   * Timestamp of the next delivery attempt. If null it means there will be no more delivery attempts.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Timestamp of the next delivery attempt")
+  @example(DateTime.fromISO("2023-01-01T01:01:01.001Z"))
+  nextAttempt?: DateTime;
+
+  /**
+   * List of delivery attempts.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Delivery Attempts")
+  attempts: Array<NotificationEventDeliveryAttempt>;
+}
+
+/**
+ * The response of the event delivery attempt.
+ */
+@friendlyName("EventDeliveryAttemptResponse")
+model EventDeliveryAttemptResponse {
+  /**
+   * Status code of the response if available.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Status Code")
+  statusCode?: integer;
+
+  /**
+   * The body of the response.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Response Body")
+  body: string;
+
+  /**
+   * The duration of the response in milliseconds.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Response Duration")
+  durationMs: integer;
+
+  /**
+   * URL where the event was sent in case of notification channel with webhook type.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("URL")
+  url?: string;
+}
+
+/**
+ * The delivery attempt of the notification event.
+ */
+@friendlyName("NotificationEventDeliveryAttempt")
+model NotificationEventDeliveryAttempt {
+  /**
+   * State of teh delivery attempt.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("State of teh delivery attempt")
+  @example(NotificationEventDeliveryStatusState.Success)
+  state: NotificationEventDeliveryStatusState;
+
+  /**
+   * Response returned by the notification event recipient.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Response returned by the notification event recipient")
+  response: EventDeliveryAttemptResponse;
+
+  /**
+   * Timestamp of the delivery attempt.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Timestamp of the delivery attempt")
+  @example(DateTime.fromISO("2023-01-01T01:01:01.001Z"))
+  timestamp: DateTime;
+}
+
+/**
+ * A notification event that will be re-sent.
+ */
+@friendlyName("NotificationEventResendRequest")
+model NotificationEventResendRequest {
+  /**
+   * Notification channels to which the event should be re-sent.
+   */
+  @visibility(Lifecycle.Create)
+  @summary("Channels")
+  channels?: Array<ULID>;
 }
 
 /**
@@ -63,12 +161,16 @@ model NotificationEventDeliveryStatus {
  */
 @friendlyName("NotificationEventDeliveryStatusState")
 @summary("Delivery State")
-@extension("x-enum-varnames", #["Success", "Failed", "Sending", "Pending"])
+@extension(
+  "x-enum-varnames",
+  #["Success", "Failed", "Sending", "Pending", "Resending"]
+)
 enum NotificationEventDeliveryStatusState {
   Success: "SUCCESS",
   Failed: "FAILED",
   Sending: "SENDING",
   Pending: "PENDING",
+  Resending: "RESENDING",
 }
 
 /**
@@ -151,7 +253,8 @@ enum NotificationEventOrderBy {
 
 @route("/api/v1/notification/events")
 @tag("Notifications")
-interface Events {
+@friendlyName("NotificationEvents")
+interface NotificationEventsEndpoints {
   /**
    * List all notification events.
    */
@@ -214,9 +317,9 @@ interface Events {
     @query(#{ explode: true })
     channel?: Array<ULID>,
 
-    ...OpenMeter.QueryPagination,
-    ...OpenMeter.QueryOrdering<NotificationEventOrderBy>,
-  ): OpenMeter.PaginatedResponse<NotificationEvent> | OpenMeter.CommonErrors;
+    ...QueryPagination,
+    ...QueryOrdering<NotificationEventOrderBy>,
+  ): PaginatedResponse<NotificationEvent> | CommonErrors;
 
   /**
    * Get a notification event by id.
@@ -224,7 +327,13 @@ interface Events {
   @get
   @operationId("getNotificationEvent")
   @summary("Get notification event")
-  get(
-    @path eventId: string,
-  ): NotificationEvent | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  get(@path eventId: string): NotificationEvent | NotFoundError | CommonErrors;
+
+  @post
+  @route("/{eventId}/resend")
+  @operationId("resendNotificationEvent")
+  @summary("Re-send notification event")
+  resend(@path eventId: ULID, @body request: NotificationEventResendRequest): {
+    @statusCode _: 202;
+  } | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
 }

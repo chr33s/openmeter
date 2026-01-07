@@ -36,6 +36,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/subject"
 	subjecthooks "github.com/openmeterio/openmeter/openmeter/subject/service/hooks"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/ffx"
 	kafkametrics "github.com/openmeterio/openmeter/pkg/kafka/metrics"
 )
 
@@ -47,15 +48,15 @@ type Application struct {
 	AppRegistry                      common.AppRegistry
 	Customer                         customer.Service
 	CustomerSubjectHook              common.CustomerSubjectHook
-	CustomerSubjectValidatorHook     common.CustomerSubjectValidatorHook
 	CustomerEntitlementValidatorHook common.CustomerEntitlementValidatorHook
 	Billing                          billing.Service
 	EntClient                        *db.Client
 	EventPublisher                   eventbus.Publisher
 	EntitlementRegistry              *registry.Entitlement
 	FeatureConnector                 feature.FeatureConnector
+	FeatureFlags                     ffx.Service
 	IngestCollector                  ingest.Collector
-	IngestService                    *ingest.Service
+	IngestService                    ingest.Service
 	KafkaProducer                    *kafka.Producer
 	KafkaMetrics                     *kafkametrics.Metrics
 	KafkaIngestNamespaceHandler      *kafkaingest.NamespaceHandler
@@ -71,10 +72,10 @@ type Application struct {
 	Portal                           portal.Service
 	ProgressManager                  progressmanager.Service
 	RouterHooks                      *server.RouterHooks
+	PostAuthMiddlewares              server.PostAuthMiddlewares
 	Secret                           secret.Service
 	SubjectService                   subject.Service
 	SubjectCustomerHook              subjecthooks.CustomerSubjectHook
-	SubjectEntitlementValidatorHook  subjecthooks.EntitlementValidatorHook
 	Subscription                     common.SubscriptionServiceWithWorkflow
 	StreamingConnector               streaming.Connector
 	TelemetryServer                  common.TelemetryServer
@@ -92,17 +93,18 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		common.Config,
 		common.Customer,
 		common.NewCustomerSubjectServiceHook,
-		common.NewCustomerSubjectValidatorServiceHook,
 		common.NewCustomerEntitlementValidatorServiceHook,
 		common.Database,
 		common.Entitlement,
 		common.Framework,
+		common.FFX,
 		common.Kafka,
 		common.KafkaIngest,
 		common.KafkaNamespaceResolver,
 		common.MeterManageWithConfigMeters,
 		common.MeterEvent,
 		common.Namespace,
+		common.StaticNamespace,
 		common.NewDefaultTextMapPropagator,
 		common.NewKafkaIngestCollector,
 		common.NewIngestCollector,
@@ -119,9 +121,10 @@ func initializeApplication(ctx context.Context, conf config.Configuration) (Appl
 		common.Secret,
 		common.ServerProvisionTopics,
 		common.Subject,
+		common.NewSvixAPIClient,
 		common.NewSubjectCustomerHook,
-		common.NewSubjectEntitlementValidatorHook,
 		common.Telemetry,
+		common.TelemetryLoggerNoAdditionalMiddlewares,
 		common.NewTerminationChecker,
 		common.WatermillNoPublisher,
 		wire.Struct(new(Application), "*"),

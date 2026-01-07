@@ -11,14 +11,15 @@ import "../query.tsp";
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
 
-namespace OpenMeter.Customer;
+namespace OpenMeter;
 
 /**
  * Customer API.
  */
 @route("/api/v1/customers")
 @tag("Customers")
-interface Customers {
+@friendlyName("Customers")
+interface CustomersEndpoints {
   /**
    * Create a new customer.
    */
@@ -84,8 +85,19 @@ interface Customers {
   @summary("List customer subscriptions")
   listCustomerSubscriptions(
     @path customerIdOrKey: ULIDOrExternalKey,
+    @query(#{ explode: true }) status?: SubscriptionStatus[],
+    ...QueryOrdering<CustomerSubscriptionOrderBy>,
     ...QueryPagination,
-  ): PaginatedResponse<ProductCatalog.Subscription> | NotFoundError | CommonErrors;
+  ): PaginatedResponse<Subscription> | NotFoundError | CommonErrors;
+}
+
+/**
+ * Order by options for customer subscriptions.
+ */
+@friendlyName("CustomerSubscriptionOrderBy")
+enum CustomerSubscriptionOrderBy {
+  activeFrom: "activeFrom",
+  activeTo: "activeTo",
 }
 
 /**
@@ -111,7 +123,7 @@ model ListCustomersParams {
    * Order customers by.
    * @TODO: set default value to CustomerOrderBy.name
    */
-  ...OpenMeter.QueryOrdering<CustomerOrderBy>;
+  ...QueryOrdering<CustomerOrderBy>;
 
   /**
    * Include deleted customers.
@@ -198,6 +210,7 @@ model Customer {
 
   /**
    * An optional unique key of the customer.
+   * Either key or usageAttribution.subjectKeys must be provided.
    * Useful to reference the customer in external systems.
    * For example, your database ID.
    */
@@ -206,9 +219,10 @@ model Customer {
 
   /**
    * Mapping to attribute metered usage to the customer
+   * Either key or usageAttribution.subjectKeys must be provided.
    */
   @summary("Usage Attribution")
-  usageAttribution: CustomerUsageAttribution;
+  usageAttribution?: CustomerUsageAttribution;
 
   /**
    * The primary email address of the customer.
@@ -243,7 +257,7 @@ model Customer {
    */
   @summary("Subscriptions")
   @visibility(Lifecycle.Read)
-  subscriptions?: ProductCatalog.Subscription[];
+  subscriptions?: Subscription[];
 
   /**
    * Set of key-value pairs managed by the system. Cannot be modified by user.
@@ -255,17 +269,23 @@ model Customer {
 
 /**
  * Mapping to attribute metered usage to the customer.
- * One customer can have multiple subjects,
+ * One customer can have zero or more subjects,
  * but one subject can only belong to one customer.
  */
 @friendlyName("CustomerUsageAttribution")
 model CustomerUsageAttribution {
   /**
    * The subjects that are attributed to the customer.
-   * @TODO allow multiple subjects
+   * Can be empty when no subjects are associated with the customer.
    */
   @summary("SubjectKeys")
-  @minItems(1)
-  @maxItems(1)
-  subjectKeys: string[];
+  @minItems(0)
+  subjectKeys: SubjectKey[];
 }
+
+/**
+ * SubjectKey is a key that is used to identify a subject.
+ */
+@minLength(1)
+@extension("x-inline", true)
+scalar SubjectKey extends string;

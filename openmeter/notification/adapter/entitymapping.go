@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
 	"github.com/openmeterio/openmeter/openmeter/notification"
 	"github.com/openmeterio/openmeter/pkg/models"
@@ -12,8 +14,9 @@ import (
 
 func ChannelFromDBEntity(e db.NotificationChannel) *notification.Channel {
 	return &notification.Channel{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: e.Namespace,
+			ID:        e.ID,
 		},
 		ManagedModel: models.ManagedModel{
 			CreatedAt: e.CreatedAt.UTC(),
@@ -28,11 +31,13 @@ func ChannelFromDBEntity(e db.NotificationChannel) *notification.Channel {
 				return &deletedAt
 			}(),
 		},
-		ID:       e.ID,
 		Type:     e.Type,
 		Name:     e.Name,
 		Disabled: e.Disabled,
 		Config:   e.Config,
+
+		Annotations: e.Annotations,
+		Metadata:    e.Metadata,
 	}
 }
 
@@ -49,8 +54,9 @@ func RuleFromDBEntity(e db.NotificationRule) *notification.Rule {
 	}
 
 	return &notification.Rule{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: e.Namespace,
+			ID:        e.ID,
 		},
 		ManagedModel: models.ManagedModel{
 			CreatedAt: e.CreatedAt.UTC(),
@@ -65,12 +71,14 @@ func RuleFromDBEntity(e db.NotificationRule) *notification.Rule {
 				return &deletedAt
 			}(),
 		},
-		ID:       e.ID,
 		Type:     e.Type,
 		Name:     e.Name,
 		Disabled: e.Disabled,
 		Config:   e.Config,
 		Channels: channels,
+
+		Annotations: e.Annotations,
+		Metadata:    e.Metadata,
 	}
 }
 
@@ -99,10 +107,10 @@ func EventFromDBEntity(e db.NotificationEvent) (*notification.Event, error) {
 	rule := RuleFromDBEntity(*ruleRow)
 
 	return &notification.Event{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: e.Namespace,
+			ID:        e.ID,
 		},
-		ID:             e.ID,
 		Type:           e.Type,
 		CreatedAt:      e.CreatedAt.UTC(),
 		Payload:        payload,
@@ -114,15 +122,26 @@ func EventFromDBEntity(e db.NotificationEvent) (*notification.Event, error) {
 
 func EventDeliveryStatusFromDBEntity(e db.NotificationEventDeliveryStatus) *notification.EventDeliveryStatus {
 	return &notification.EventDeliveryStatus{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: e.Namespace,
+			ID:        e.ID,
 		},
-		ID:        e.ID,
 		ChannelID: e.ChannelID,
 		EventID:   e.EventID,
 		State:     e.State,
 		Reason:    e.Reason,
 		CreatedAt: e.CreatedAt.UTC(),
 		UpdatedAt: e.UpdatedAt.UTC(),
+
+		NextAttempt: func() *time.Time {
+			if e.NextAttemptAt == nil {
+				return nil
+			}
+
+			return lo.ToPtr(lo.FromPtr(e.NextAttemptAt).UTC())
+		}(),
+		Attempts: e.Attempts,
+
+		Annotations: e.Annotations,
 	}
 }

@@ -2,8 +2,11 @@ package customer
 
 import (
 	"errors"
+	"fmt"
+	"slices"
 
-	"github.com/openmeterio/openmeter/api"
+	"github.com/samber/mo"
+
 	"github.com/openmeterio/openmeter/openmeter/streaming"
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/currencyx"
@@ -12,31 +15,74 @@ import (
 	"github.com/openmeterio/openmeter/pkg/sortx"
 )
 
+type (
+	Expand  string
+	Expands []Expand
+)
+
+const (
+	ExpandSubscriptions Expand = "subscriptions"
+)
+
+func (e Expands) Validate() error {
+	for _, expand := range e {
+		if expand != ExpandSubscriptions {
+			return models.NewGenericValidationError(fmt.Errorf("invalid expand: %s", expand))
+		}
+	}
+
+	return nil
+}
+
 var _ streaming.Customer = &Customer{}
 
 // Customer represents a customer
 type Customer struct {
 	models.ManagedResource
 
-	Key              *string                  `json:"key,omitempty"`
-	UsageAttribution CustomerUsageAttribution `json:"usageAttribution"`
-	PrimaryEmail     *string                  `json:"primaryEmail,omitempty"`
-	Currency         *currencyx.Code          `json:"currency,omitempty"`
-	BillingAddress   *models.Address          `json:"billingAddress,omitempty"`
-	Metadata         *models.Metadata         `json:"metadata,omitempty"`
-	Annotation       *models.Annotations      `json:"annotations,omitempty"`
+	Key              *string                   `json:"key,omitempty"`
+	UsageAttribution *CustomerUsageAttribution `json:"usageAttribution,omitempty"`
+	PrimaryEmail     *string                   `json:"primaryEmail,omitempty"`
+	Currency         *currencyx.Code           `json:"currency,omitempty"`
+	BillingAddress   *models.Address           `json:"billingAddress,omitempty"`
+	Metadata         *models.Metadata          `json:"metadata,omitempty"`
+	Annotation       *models.Annotations       `json:"annotations,omitempty"`
 
-	ActiveSubscriptionIDs []string
+	ActiveSubscriptionIDs mo.Option[[]string]
+}
+
+// AsCustomerMutate returns a CustomerMutate from the Customer
+func (c Customer) AsCustomerMutate() CustomerMutate {
+	mut := CustomerMutate{
+		Key:            c.Key,
+		Name:           c.Name,
+		Description:    c.Description,
+		PrimaryEmail:   c.PrimaryEmail,
+		Currency:       c.Currency,
+		BillingAddress: c.BillingAddress,
+		Metadata:       c.Metadata,
+		Annotation:     c.Annotation,
+	}
+
+	if c.UsageAttribution != nil {
+		mut.UsageAttribution = &CustomerUsageAttribution{
+			SubjectKeys: c.UsageAttribution.SubjectKeys,
+		}
+	}
+
+	return mut
 }
 
 // GetUsageAttribution returns the customer usage attribution
 // implementing the streaming.CustomerUsageAttribution interface
 func (c Customer) GetUsageAttribution() streaming.CustomerUsageAttribution {
-	return streaming.CustomerUsageAttribution{
-		ID:          c.ID,
-		Key:         c.Key,
-		SubjectKeys: c.UsageAttribution.SubjectKeys,
+	subjectKeys := []string{}
+
+	if c.UsageAttribution != nil {
+		subjectKeys = c.UsageAttribution.SubjectKeys
 	}
+
+	return streaming.NewCustomerUsageAttribution(c.ID, c.Key, subjectKeys)
 }
 
 // GetID returns the customer id
@@ -68,19 +114,34 @@ func (c Customer) Validate() error {
 			return models.NewGenericValidationError(err)
 		}
 	}
+
+	// Either key or usageAttribution.subjectKeys must be provided
+	hasKey := c.Key != nil && *c.Key != ""
+	hasSubjectKeys := c.UsageAttribution != nil && len(c.UsageAttribution.SubjectKeys) > 0
+
+	if !hasKey && !hasSubjectKeys {
+		return models.NewGenericValidationError(errors.New("either key or usageAttribution.subjectKeys must be provided"))
+	}
+
+	if c.UsageAttribution != nil {
+		if err := c.UsageAttribution.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
 type CustomerMutate struct {
-	Key              *string                  `json:"key,omitempty"`
-	Name             string                   `json:"name"`
-	Description      *string                  `json:"description,omitempty"`
-	UsageAttribution CustomerUsageAttribution `json:"usageAttribution"`
-	PrimaryEmail     *string                  `json:"primaryEmail"`
-	Currency         *currencyx.Code          `json:"currency"`
-	BillingAddress   *models.Address          `json:"billingAddress"`
-	Metadata         *models.Metadata         `json:"metadata"`
-	Annotation       *models.Annotations      `json:"annotations,omitempty"`
+	Key              *string                   `json:"key,omitempty"`
+	Name             string                    `json:"name"`
+	Description      *string                   `json:"description,omitempty"`
+	UsageAttribution *CustomerUsageAttribution `json:"usageAttribution,omitempty"`
+	PrimaryEmail     *string                   `json:"primaryEmail"`
+	Currency         *currencyx.Code           `json:"currency"`
+	BillingAddress   *models.Address           `json:"billingAddress"`
+	Metadata         *models.Metadata          `json:"metadata"`
+	Annotation       *models.Annotations       `json:"annotations,omitempty"`
 }
 
 func (c CustomerMutate) Validate() error {
@@ -97,6 +158,21 @@ func (c CustomerMutate) Validate() error {
 			return models.NewGenericValidationError(err)
 		}
 	}
+
+	// Either key or usageAttribution.subjectKeys must be provided
+	hasKey := c.Key != nil && *c.Key != ""
+	hasSubjectKeys := c.UsageAttribution != nil && len(c.UsageAttribution.SubjectKeys) > 0
+
+	if !hasKey && !hasSubjectKeys {
+		return models.NewGenericValidationError(errors.New("either key or usageAttribution.subjectKeys must be provided"))
+	}
+
+	if c.UsageAttribution != nil {
+		if err := c.UsageAttribution.Validate(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -151,24 +227,52 @@ func (i CustomerIDOrKey) Validate() error {
 	return nil
 }
 
-// CustomerUsageAttribution represents the usage attribution for a customer
+var _ models.Validator = (*CustomerUsageAttribution)(nil)
+
+// CustomerUsageAttribution represents the additional fields for a customer usage attribution
+// Do not use this struct directly, use the GetUsageAttribution method instead that implements the streaming.CustomerUsageAttribution interface
+// The customer usage attribution is more than just the subject keys, it also includes key for example.
 type CustomerUsageAttribution struct {
 	SubjectKeys []string `json:"subjectKeys"`
 }
 
-// UsageAttribution
-func (c CustomerUsageAttribution) GetSubjectKey() (string, error) {
-	if len(c.SubjectKeys) != 1 {
-		return "", NewErrCustomerSubjectKeyNotSingular(c.SubjectKeys)
+const MinSubjectKeyLength = 1
+
+func (c CustomerUsageAttribution) Validate() error {
+	var errs []error
+
+	for _, subjectKey := range c.SubjectKeys {
+		if len(subjectKey) < MinSubjectKeyLength {
+			errs = append(errs, models.NewGenericValidationError(
+				fmt.Errorf("subject key must be at least %d character: %q", MinSubjectKeyLength, subjectKey),
+			))
+		}
 	}
 
-	return c.SubjectKeys[0], nil
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
+}
+
+// Deprecated: This functionality is only present for backwards compatibility
+func (c CustomerUsageAttribution) GetFirstSubjectKey() (string, error) {
+	if len(c.SubjectKeys) == 0 {
+		return "", models.NewGenericValidationError(errors.New("no subject keys found"))
+	}
+
+	sortedKeys := slices.Clone(c.SubjectKeys)
+	slices.Sort(sortedKeys)
+
+	return sortedKeys[0], nil
 }
 
 // GetCustomerByUsageAttributionInput represents the input for the GetCustomerByUsageAttribution method
 type GetCustomerByUsageAttributionInput struct {
-	Namespace  string
-	SubjectKey string
+	Namespace string
+
+	// The key of either the customer or one of its subjects
+	Key string
+
+	// Expand
+	Expands Expands
 }
 
 func (i GetCustomerByUsageAttributionInput) Validate() error {
@@ -176,8 +280,12 @@ func (i GetCustomerByUsageAttributionInput) Validate() error {
 		return models.NewGenericValidationError(errors.New("namespace is required"))
 	}
 
-	if i.SubjectKey == "" {
+	if i.Key == "" {
 		return models.NewGenericValidationError(errors.New("subject key is required"))
+	}
+
+	if err := i.Expands.Validate(); err != nil {
+		return models.NewGenericValidationError(err)
 	}
 
 	return nil
@@ -191,7 +299,7 @@ type ListCustomersInput struct {
 	IncludeDeleted bool
 
 	// Order
-	OrderBy api.CustomerOrderBy
+	OrderBy string
 	Order   sortx.Order
 
 	// Filters
@@ -201,11 +309,18 @@ type ListCustomersInput struct {
 	Subject      *string
 	PlanKey      *string
 	CustomerIDs  []string
+
+	// Expand
+	Expands Expands
 }
 
 func (i ListCustomersInput) Validate() error {
 	if i.Namespace == "" {
 		return models.NewGenericValidationError(errors.New("namespace is required"))
+	}
+
+	if err := i.Expands.Validate(); err != nil {
+		return models.NewGenericValidationError(err)
 	}
 
 	return nil
@@ -276,7 +391,7 @@ type GetCustomerInput struct {
 	CustomerIDOrKey *CustomerIDOrKey
 
 	// Expand
-	Expand []api.CustomerExpand
+	Expands Expands
 }
 
 func (i GetCustomerInput) Validate() error {
@@ -311,6 +426,10 @@ func (i GetCustomerInput) Validate() error {
 
 	if i.CustomerIDOrKey != nil {
 		errs = append(errs, i.CustomerIDOrKey.Validate())
+	}
+
+	if err := i.Expands.Validate(); err != nil {
+		return models.NewGenericValidationError(err)
 	}
 
 	return errors.Join(errs...)

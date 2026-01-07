@@ -20,7 +20,7 @@ model ListMetersParams {
    * Order meters by.
    * @TODO: set default value to MeterOrderBy.key
    */
-  ...OpenMeter.QueryOrdering<MeterOrderBy>;
+  ...QueryOrdering<MeterOrderBy>;
 
   /**
    * Include deleted meters.
@@ -45,7 +45,8 @@ enum MeterOrderBy {
 
 @route("/api/v1/meters")
 @tag("Meters")
-interface Meters {
+@friendlyName("Meters")
+interface MetersEndpoints {
   /**
    * List meters.
    */
@@ -76,8 +77,8 @@ interface Meters {
     meter: MeterCreate,
   ): {
     @statusCode _: 201;
-    @body body: OpenMeter.Meter;
-  } | OpenMeter.CommonErrors;
+    @body body: Meter;
+  } | CommonErrors;
 
   /**
    * Update a meter.
@@ -92,8 +93,8 @@ interface Meters {
     @body
     meter: MeterUpdate,
   ): {
-    @body body: OpenMeter.Meter;
-  } | OpenMeter.CommonErrors;
+    @body body: Meter;
+  } | CommonErrors;
 
   /**
    * Delete a meter.
@@ -102,9 +103,7 @@ interface Meters {
   @route("/{meterIdOrSlug}")
   @operationId("deleteMeter")
   @summary("Delete meter")
-  delete(
-    @path meterIdOrSlug: OpenMeter.MeterIdentifier,
-  ): void | OpenMeter.CommonErrors;
+  delete(@path meterIdOrSlug: MeterIdentifier): void | CommonErrors;
 
   /**
    * Query meter for usage.
@@ -157,9 +156,67 @@ interface Meters {
   @route("/{meterIdOrSlug}/subjects")
   @operationId("listMeterSubjects")
   @summary("List meter subjects")
-  listSubjects(@path meterIdOrSlug: MeterIdentifier): {
+  listSubjects(
+    @path meterIdOrSlug: MeterIdentifier,
+
+    /**
+     * Start date-time in RFC 3339 format.
+     *
+     * Inclusive. Defaults to the beginning of time.
+     *
+     * For example: ?from=2025-01-01T00%3A00%3A00.000Z
+     */
+    @query(#{ explode: true })
+    from?: DateTime,
+
+    /**
+     * End date-time in RFC 3339 format.
+     *
+     * Inclusive.
+     *
+     * For example: ?to=2025-02-01T00%3A00%3A00.000Z
+     */
+    @query(#{ explode: true })
+    to?: DateTime,
+  ): {
     @body
     @example(#["customer_1", "customer_2"])
+    _: string[];
+  } | CommonErrors;
+
+  /**
+   * List meter group by values.
+   */
+  @get
+  @route("/{meterIdOrSlug}/group-by/{groupByKey}/values")
+  @operationId("listMeterGroupByValues")
+  @summary("List meter group by values")
+  listGroupByValues(
+    @path meterIdOrSlug: MeterIdentifier,
+    @path groupByKey: string,
+
+    /**
+     * Start date-time in RFC 3339 format.
+     *
+     * Inclusive. Defaults to 24 hours ago.
+     *
+     * For example: ?from=2025-01-01T00%3A00%3A00.000Z
+     */
+    @query(#{ explode: true })
+    from?: DateTime,
+
+    /**
+     * End date-time in RFC 3339 format.
+     *
+     * Inclusive.
+     *
+     * For example: ?to=2025-02-01T00%3A00%3A00.000Z
+     */
+    @query(#{ explode: true })
+    to?: DateTime,
+  ): {
+    @body
+    @example(#["gpt-4-turbo", "gpt-4o"])
     _: string[];
   } | CommonErrors;
 }
@@ -172,13 +229,12 @@ interface Meters {
   slug: "tokens_total",
   name: "Tokens Total",
   description: "AI Token Usage",
-  aggregation: OpenMeter.MeterAggregation.SUM,
+  aggregation: MeterAggregation.SUM,
   eventType: "prompt",
   valueProperty: "$.tokens",
   groupBy: #{ `model`: "$.model", type: "$.type" },
 })
-model MeterCreate
-  is TypeSpec.Rest.Resource.ResourceCreateModel<OpenMeter.Meter>;
+model MeterCreate is TypeSpec.Rest.Resource.ResourceCreateModel<Meter>;
 
 /**
  * A meter update model.
@@ -192,8 +248,7 @@ model MeterCreate
   description: "AI Token Usage",
   groupBy: #{ `model`: "$.model", type: "$.type" },
 })
-model MeterUpdate
-  is TypeSpec.Rest.Resource.ResourceReplaceModel<OpenMeter.Meter>;
+model MeterUpdate is TypeSpec.Rest.Resource.ResourceReplaceModel<Meter>;
 
 /**
  * A meter is a configuration that defines how to match and aggregate events.
@@ -212,7 +267,7 @@ model MeterUpdate
   updatedAt: DateTime.fromISO("2024-01-01T01:01:01.001Z"),
 })
 model Meter {
-  // We omit name from the global.Resource as name is optional in the Meter model to avoiud breaking changes for now.
+  // We omit name from the global.Resource as name is optional in the Meter model to avoid breaking changes for now.
   ...OmitProperties<global.Resource, "name">;
 
   /**
@@ -278,6 +333,13 @@ model Meter {
   @visibility(Lifecycle.Read, Lifecycle.Create, Lifecycle.Update)
   @example(#{ type: "$.type" })
   groupBy?: Record<string>;
+
+  /**
+   * Set of key-value pairs managed by the system. Cannot be modified by user.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Annotations")
+  annotations?: Annotations | null;
 }
 
 /**
@@ -391,9 +453,25 @@ model MeterQuery {
    * Simple filter for group bys with exact match.
    *
    * For example: ?filterGroupBy[vendor]=openai&filterGroupBy[model]=gpt-4-turbo
+   *
+   * ⚠️ __Deprecated__: Use `advancedMeterGroupByFilters` instead
    */
+  #deprecated "Use advancedMeterGroupByFilters instead"
   @query(#{ explode: true, style: "deepObject" })
   filterGroupBy?: Record<string>;
+
+  /**
+   * Optional advanced meter group by filters.
+   * You can use this to filter for values of the meter groupBy fields.
+   */
+  @query
+  @summary("Advanced meter group by filters")
+  @example(#{
+    `model`: #{ $in: #["gpt-4", "gpt-4o"] },
+    type: #{ $eq: "input" },
+  })
+  @encode("application/json")
+  advancedMeterGroupByFilters?: Record<FilterString>;
 
   /**
    * If not specified a single aggregate will be returned for each subject and time window.
@@ -466,6 +544,16 @@ model MeterQueryRequest {
    */
   @example(#{ `model`: #["gpt-4-turbo", "gpt-4o"], type: #["prompt"] })
   filterGroupBy?: Record<string[]>;
+
+  /**
+   * Optional advanced meter group by filters.
+   * You can use this to filter for values of the meter groupBy fields.
+   */
+  @example(#{
+    `model`: #{ $in: #["gpt-4", "gpt-4o"] },
+    type: #{ $eq: "input" },
+  })
+  advancedMeterGroupByFilters?: Record<FilterString>;
 
   /**
    * If not specified a single aggregate will be returned for each subject and time window.

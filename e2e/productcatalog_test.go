@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"context"
 	"net/http"
 	"slices"
 	"testing"
@@ -9,7 +10,6 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/net/context"
 	"golang.org/x/sync/semaphore"
 
 	api "github.com/openmeterio/openmeter/api/client/go"
@@ -28,7 +28,7 @@ func TestPlan(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Let's set up two customers
+	// Let's set up three customers
 	// ensure subjects exist for usage attribution
 	{
 		resp, err := client.UpsertSubjectWithResponse(ctx, api.UpsertSubjectJSONRequestBody{api.SubjectUpsert{Key: "test_customer_subject_1"}})
@@ -49,7 +49,7 @@ func TestPlan(t *testing.T) {
 			PhoneNumber: lo.ToPtr("1234567890"),
 			PostalCode:  lo.ToPtr("12345"),
 		},
-		UsageAttribution: api.CustomerUsageAttribution{
+		UsageAttribution: &api.CustomerUsageAttribution{
 			SubjectKeys: []string{"test_customer_subject_1"},
 		},
 	})
@@ -80,11 +80,36 @@ func TestPlan(t *testing.T) {
 			PhoneNumber: lo.ToPtr("1234567890"),
 			PostalCode:  lo.ToPtr("12345"),
 		},
-		UsageAttribution: api.CustomerUsageAttribution{
+		UsageAttribution: &api.CustomerUsageAttribution{
 			SubjectKeys: []string{"test_customer_subject_2"},
 		},
 	})
 	require.Nil(t, err)
+
+	customer3APIRes, err := client.CreateCustomerWithResponse(ctx, api.CreateCustomerJSONRequestBody{
+		Name:         "Test Customer 3",
+		Key:          lo.ToPtr("test_customer_3"),
+		Currency:     lo.ToPtr(api.CurrencyCode("USD")),
+		Description:  lo.ToPtr("Test Customer Description"),
+		PrimaryEmail: lo.ToPtr("customer3@mail.com"),
+		BillingAddress: &api.Address{
+			City:        lo.ToPtr("City"),
+			Country:     lo.ToPtr("US"),
+			Line1:       lo.ToPtr("Line 1"),
+			Line2:       lo.ToPtr("Line 2"),
+			State:       lo.ToPtr("State"),
+			PhoneNumber: lo.ToPtr("1234567890"),
+			PostalCode:  lo.ToPtr("12345"),
+		},
+		UsageAttribution: &api.CustomerUsageAttribution{
+			SubjectKeys: []string{},
+		},
+	})
+	require.Nil(t, err)
+	require.Equal(t, 201, customer3APIRes.StatusCode(), "received the following body: %s", customer3APIRes.Body)
+
+	customer3 := customer3APIRes.JSON201
+	require.NotNil(t, customer3, "received the following body: %s", customer3APIRes.Body)
 
 	t.Run("Should check access of customer returning nothing", func(t *testing.T) {
 		res, err := client.GetCustomerAccessWithResponse(ctx, customer1.Id)
@@ -120,7 +145,7 @@ func TestPlan(t *testing.T) {
 			PhoneNumber: lo.ToPtr("1234567890"),
 			PostalCode:  lo.ToPtr("12345"),
 		},
-		UsageAttribution: api.CustomerUsageAttribution{
+		UsageAttribution: &api.CustomerUsageAttribution{
 			SubjectKeys: []string{"test_customer_subject_abused"},
 		},
 	})
@@ -495,6 +520,37 @@ func TestPlan(t *testing.T) {
 		require.True(t, subscription.ProRatingConfig.Enabled)
 	})
 
+	t.Run("Should create a subscription even if Customer.UsageAttribution doesn't have any subjects", func(t *testing.T) {
+		require.NotNil(t, customer3)
+		require.NotNil(t, customer3.Id)
+
+		ct := &api.SubscriptionTiming{}
+		require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+		create := api.SubscriptionCreate{}
+
+		anchorTime := time.Now().Add(-time.Hour).Truncate(time.Millisecond).UTC()
+
+		err := create.FromCustomSubscriptionCreate(api.CustomSubscriptionCreate{
+			Timing:        ct,
+			CustomerKey:   customer3.Key,
+			CustomPlan:    customPlanInput,
+			BillingAnchor: lo.ToPtr(anchorTime),
+		})
+		require.Nil(t, err)
+
+		apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+		require.Nil(t, err, "received the following err: %w", err)
+
+		assert.Equal(t, 201, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+		subscription := apiRes.JSON201
+		require.NotNil(t, subscription)
+		require.NotNil(t, subscription.Id)
+		assert.Equal(t, api.SubscriptionStatusActive, subscription.Status)
+		assert.Nil(t, subscription.Plan)
+	})
+
 	t.Run("Should list customer subscriptions", func(t *testing.T) {
 		require.NotNil(t, customer2)
 		require.NotNil(t, customer2.Id)
@@ -551,6 +607,42 @@ func TestPlan(t *testing.T) {
 		require.Equal(t, "P1M", subscription.BillingCadence)
 		require.Equal(t, api.ProRatingModeProratePrices, subscription.ProRatingConfig.Mode)
 		require.True(t, subscription.ProRatingConfig.Enabled)
+
+		t.Run("Should return nice validation error if the customer already has a subscription", func(t *testing.T) {
+			require.NotNil(t, customer1)
+			require.NotNil(t, customer1.Id)
+
+			ct := &api.SubscriptionTiming{}
+			require.NoError(t, ct.FromSubscriptionTiming1(startTime))
+
+			create := api.SubscriptionCreate{}
+			err := create.FromPlanSubscriptionCreate(api.PlanSubscriptionCreate{
+				Timing:      ct,
+				CustomerId:  &customer1.Id,
+				Name:        lo.ToPtr("Test Subscription"),
+				Description: lo.ToPtr("Test Subscription Description"),
+				Plan: api.PlanReferenceInput{
+					Key:     PlanKey,
+					Version: lo.ToPtr(1),
+				},
+			})
+			require.Nil(t, err)
+
+			apiRes, err := client.CreateSubscriptionWithResponse(ctx, create)
+			require.Nil(t, err)
+
+			require.Equal(t, 409, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
+
+			extensions := apiRes.ApplicationproblemJSON409.Extensions
+
+			require.GreaterOrEqual(t, len(extensions.ValidationErrors), 1)
+			require.Equal(t, "only_single_subscription_allowed_per_customer_at_a_time", extensions.ValidationErrors[0].Code)
+
+			valErr := extensions.ValidationErrors[0]
+			require.NotNil(t, valErr)
+			require.Equal(t, "only_single_subscription_allowed_per_customer_at_a_time", valErr.Code, "received the following body: %s", apiRes.Body)
+			require.NotContains(t, valErr.AdditionalProperties, "models.ErrorCode:only_single_subscription_allowed_per_customer_at_a_time")
+		})
 	})
 
 	t.Run("Should create only ONE subscription per customer, even if we spam the API in a short period of time", func(t *testing.T) {
@@ -724,10 +816,11 @@ func TestPlan(t *testing.T) {
 			require.Nil(t, err)
 
 			require.Equal(t, 400, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
-			require.NotNil(t, apiRes.ApplicationproblemJSON400.Extensions.ValidationErrors)
-			require.Len(t, *apiRes.ApplicationproblemJSON400.Extensions.ValidationErrors, 1, "received the following body: %s", apiRes.Body)
+			// this breaks as we're not backwards compatible
+			extensions := apiRes.ApplicationproblemJSON400.Extensions
+			require.GreaterOrEqual(t, len(extensions.ValidationErrors), 1)
 
-			valErr := (*apiRes.ApplicationproblemJSON400.Extensions.ValidationErrors)[0]
+			valErr := extensions.ValidationErrors[0]
 			require.NotNil(t, valErr)
 			require.Equal(t, "rate_card_billing_cadence_unaligned", valErr.Code, "received the following body: %s", apiRes.Body)
 		})
@@ -780,12 +873,14 @@ func TestPlan(t *testing.T) {
 
 			require.Equal(t, 400, apiRes.StatusCode(), "received the following body: %s", apiRes.Body)
 			require.NotNil(t, apiRes.ApplicationproblemJSON400.Extensions, "received the following body: %s", apiRes.Body)
-			require.NotNil(t, apiRes.ApplicationproblemJSON400.Extensions.ValidationErrors, "received the following body: %s", apiRes.Body)
-			require.Len(t, *apiRes.ApplicationproblemJSON400.Extensions.ValidationErrors, 1, "received the following body: %s", apiRes.Body)
 
-			valErr := (*apiRes.ApplicationproblemJSON400.Extensions.ValidationErrors)[0]
+			extensions := apiRes.ApplicationproblemJSON400.Extensions
+			require.GreaterOrEqual(t, len(extensions.ValidationErrors), 1)
+
+			valErr := extensions.ValidationErrors[0]
 			require.NotNil(t, valErr)
 			require.Equal(t, "entitlement_template_invalid_issue_after_reset_with_priority", valErr.Code, "received the following body: %s", apiRes.Body)
+			// we expect component and severity
 			require.Equal(t, "$.phases[?(@.key=='test_plan_phase_3')].items.plan_feature_1.entitlementTemplate.issueAfterReset", valErr.Field, "received the following body: %s", apiRes.Body)
 		})
 
@@ -971,7 +1066,7 @@ func TestPlan(t *testing.T) {
 				PhoneNumber: lo.ToPtr("1234567890"),
 				PostalCode:  lo.ToPtr("12345"),
 			},
-			UsageAttribution: api.CustomerUsageAttribution{
+			UsageAttribution: &api.CustomerUsageAttribution{
 				SubjectKeys: []string{"test_customer_subject_3"},
 			},
 		})

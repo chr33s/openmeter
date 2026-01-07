@@ -52,6 +52,9 @@ type EntitlementValue struct {
 	// Overage Only available for metered entitlements. Overage represents the usage that wasn't covered by grants, e.g. if the subject had a total feature usage of 100 in the period but they were only granted 80, there would be 20 overage.
 	Overage *float64 `json:"overage,omitempty"`
 
+	// TotalAvailableGrantAmount The summed value of all grant amounts that are active at the time of the query.
+	TotalAvailableGrantAmount *float64 `json:"totalAvailableGrantAmount,omitempty"`
+
 	// Usage Only available for metered entitlements. Returns the total feature usage in the current period.
 	Usage *float64 `json:"usage,omitempty"`
 }
@@ -120,9 +123,9 @@ func (e SnapshotEvent) Validate() error {
 		errs = append(errs, err)
 	}
 
-	if err := e.Subject.Validate(); err != nil {
-		errs = append(errs, err)
-	}
+	// Subject validation is skipped as it's deprecated and may be empty
+	// for customers without usage attribution
+	// TODO[galexi]: get rid of all references to subject in the codebase
 
 	if e.Feature.ID == "" {
 		errs = append(errs, errors.New("feature ID must be set"))
@@ -148,11 +151,17 @@ func (e SnapshotEvent) Validate() error {
 
 // NewSnapshotEvent builds a SnapshotEvent deriving the namespace from the entitlement.
 // Though customer and subject properties are in theory present on the entitlement, this constructor uses separate arguments to populate them.
-func NewSnapshotEvent(ent entitlement.Entitlement, subj subject.Subject, customer customer.Customer, feat feature.Feature, op ValueOperationType, calculatedAt *time.Time, value *EntitlementValue, currentUsagePeriod *timeutil.ClosedPeriod) SnapshotEvent {
+// Subject is deprecated and may be nil for customers without usage attribution.
+func NewSnapshotEvent(ent entitlement.Entitlement, subj *subject.Subject, customer customer.Customer, feat feature.Feature, op ValueOperationType, calculatedAt *time.Time, value *EntitlementValue, currentUsagePeriod *timeutil.ClosedPeriod) SnapshotEvent {
+	var s subject.Subject
+	if subj != nil {
+		s = *subj
+	}
+
 	return SnapshotEvent{
 		Entitlement:        ent,
 		Namespace:          models.NamespaceID{ID: ent.Namespace},
-		Subject:            subj,
+		Subject:            s,
 		Customer:           customer,
 		Feature:            feat,
 		Operation:          op,

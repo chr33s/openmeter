@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
 	channeldb "github.com/openmeterio/openmeter/openmeter/ent/db/notificationchannel"
@@ -12,6 +13,7 @@ import (
 	statusdb "github.com/openmeterio/openmeter/openmeter/ent/db/notificationeventdeliverystatus"
 	ruledb "github.com/openmeterio/openmeter/openmeter/ent/db/notificationrule"
 	"github.com/openmeterio/openmeter/openmeter/notification"
+	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/framework/entutils"
 	"github.com/openmeterio/openmeter/pkg/models"
 	"github.com/openmeterio/openmeter/pkg/pagination"
@@ -46,6 +48,16 @@ func (a *adapter) ListEvents(ctx context.Context, params notification.ListEvents
 
 		if len(params.DeliveryStatusStates) > 0 {
 			query = query.Where(eventdb.HasDeliveryStatusesWith(statusdb.StateIn(params.DeliveryStatusStates...)))
+		}
+
+		if !params.NextAttemptBefore.IsZero() {
+			query = query.Where(eventdb.HasDeliveryStatusesWith(
+				statusdb.StateNotIn(notification.EventDeliveryStatusStateSuccess, notification.EventDeliveryStatusStateFailed),
+				statusdb.Or(
+					statusdb.NextAttemptAtIsNil(),
+					statusdb.NextAttemptAtLTE(params.NextAttemptBefore.UTC()),
+				),
+			))
 		}
 
 		if len(params.Features) > 0 {
@@ -86,12 +98,12 @@ func (a *adapter) ListEvents(ctx context.Context, params notification.ListEvents
 		}
 
 		switch params.OrderBy {
-		case notification.OrderByID:
-			query = query.Order(eventdb.ByID(order...))
 		case notification.OrderByCreatedAt:
+			query = query.Order(eventdb.ByCreatedAt(order...))
+		case notification.OrderByID:
 			fallthrough
 		default:
-			query = query.Order(eventdb.ByCreatedAt(order...))
+			query = query.Order(eventdb.ByID(order...))
 		}
 
 		response := pagination.Result[notification.Event]{
@@ -133,7 +145,7 @@ func (a *adapter) GetEvent(ctx context.Context, params notification.GetEventInpu
 			Where(eventdb.Namespace(params.Namespace)).
 			Where(eventdb.ID(params.ID)).
 			WithDeliveryStatuses().
-			WithRules()
+			WithRules(RulesEagerLoadChannels(clock.Now()))
 
 		eventRow, err := query.First(ctx)
 		if err != nil {
@@ -162,6 +174,17 @@ func (a *adapter) GetEvent(ctx context.Context, params notification.GetEventInpu
 	}
 
 	return entutils.TransactingRepo(ctx, a, fn)
+}
+
+func RulesEagerLoadChannels(at time.Time) func(q *entdb.NotificationRuleQuery) {
+	return func(q *entdb.NotificationRuleQuery) {
+		q.WithChannels(func(cq *entdb.NotificationChannelQuery) {
+			cq.Where(channeldb.Or(
+				channeldb.DeletedAtIsNil(),
+				channeldb.DeletedAtGT(at),
+			))
+		})
+	}
 }
 
 func (a *adapter) CreateEvent(ctx context.Context, params notification.CreateEventInput) (*notification.Event, error) {

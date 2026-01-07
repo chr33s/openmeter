@@ -1,11 +1,13 @@
 package subscription
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"slices"
 
 	"github.com/samber/lo"
+	"github.com/wI2L/jsondiff"
 
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/entitlement"
@@ -150,12 +152,19 @@ func (s *SubscriptionItemView) Validate() error {
 				return fmt.Errorf("entitlement template for Item %s is not static: %w", s.SubscriptionItem.Key, err)
 			}
 
-			cfgBytes1, err := e.Config.MarshalJSON()
+			var configJSON string
+
+			err = json.Unmarshal(e.Config, &configJSON)
 			if err != nil {
-				return fmt.Errorf("failed to marshal entitlement template %s config: %w", s.Entitlement.Entitlement.ID, err)
+				return fmt.Errorf("entitlement template for Item %s has invalid JSON config: %w", s.SubscriptionItem.Key, err)
 			}
 
-			if string(cfgBytes1) != string(ent.Config) {
+			diff, err := jsondiff.CompareJSON([]byte(configJSON), []byte(lo.FromPtr(ent.Config)))
+			if err != nil {
+				return fmt.Errorf("failed to compare entitlement with template config for Item %s: %w", s.SubscriptionItem.Key, err)
+			}
+
+			if len(diff) > 0 {
 				return fmt.Errorf("entitlement %s config does not match template config", s.Entitlement.Entitlement.ID)
 			}
 

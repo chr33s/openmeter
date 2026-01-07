@@ -43,6 +43,7 @@ type ListParams struct {
 	Namespace        string
 	OwnerID          *string
 	IncludeDeleted   bool
+	CustomerIDs      []string
 	SubjectKeys      []string
 	FeatureIdsOrKeys []string
 	Page             pagination.Page
@@ -60,9 +61,10 @@ type RepoCreateInput struct {
 	Amount           float64
 	Priority         uint8
 	EffectiveAt      time.Time
-	Expiration       ExpirationPeriod
-	ExpiresAt        time.Time
+	Expiration       *ExpirationPeriod
+	ExpiresAt        *time.Time
 	Metadata         map[string]string
+	Annotations      models.Annotations
 	ResetMaxRollover float64
 	ResetMinRollover float64
 	Recurrence       *timeutil.Recurrence
@@ -76,6 +78,9 @@ type Repo interface {
 	// ListActiveGrantsBetween returns all grants that are active at any point between the given time range.
 	ListActiveGrantsBetween(ctx context.Context, owner models.NamespacedID, from, to time.Time) ([]Grant, error)
 	GetGrant(ctx context.Context, grantID models.NamespacedID) (Grant, error)
+
+	// Sets deleted_at timestamp
+	DeleteOwnerGrants(ctx context.Context, ownerID models.NamespacedID) error
 
 	entutils.TxCreator
 	entutils.TxUser[Repo]

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 
@@ -25,8 +26,6 @@ type ResetUsageForOwnerParams struct {
 
 // Generic connector for balance related operations.
 type BalanceConnector interface {
-	// GetBalanceSinceSnapshot returns the result of the engine.Run since a given snapshot.
-	GetBalanceSinceSnapshot(ctx context.Context, ownerID models.NamespacedID, snap balance.Snapshot, at time.Time) (engine.RunResult, error)
 	// GetBalanceAt returns the result of the engine.Run at a given time.
 	// It tries to minimize execution cost by calculating from the latest valid snapshot, thus the length of the returned history WILL NOT be deterministic.
 	GetBalanceAt(ctx context.Context, ownerID models.NamespacedID, at time.Time) (engine.RunResult, error)
@@ -41,7 +40,8 @@ type BalanceConnector interface {
 
 var _ BalanceConnector = &connector{}
 
-func (m *connector) GetBalanceSinceSnapshot(ctx context.Context, ownerID models.NamespacedID, snap balance.Snapshot, at time.Time) (engine.RunResult, error) {
+// GetBalanceSinceSnapshot returns the result of the engine.Run since a given snapshot.
+func (m *connector) getBalanceSinceSnapshot(ctx context.Context, ownerID models.NamespacedID, snap balance.Snapshot, at time.Time) (engine.RunResult, error) {
 	ctx, span := m.Tracer.Start(ctx, "credit.GetBalanceSinceSnapshot", cTrace.WithOwner(ownerID), trace.WithAttributes(attribute.String("at", at.String())))
 	defer span.End()
 
@@ -61,7 +61,7 @@ func (m *connector) GetBalanceSinceSnapshot(ctx context.Context, ownerID models.
 
 	owner, err := m.OwnerConnector.DescribeOwner(ctx, ownerID)
 	if err != nil {
-		return def, fmt.Errorf("failed to describe owner %s: %w", owner.ID, err)
+		return def, fmt.Errorf("failed to describe owner %s: %w", ownerID.ID, err)
 	}
 
 	// get all relevant grants
@@ -100,14 +100,19 @@ func (m *connector) GetBalanceSinceSnapshot(ctx context.Context, ownerID models.
 		return def, fmt.Errorf("failed to remove inactive grants from snapshot: %w", err)
 	}
 
+	periodStart, err := m.OwnerConnector.GetUsagePeriodStartAt(ctx, ownerID, at)
+	if err != nil {
+		return def, fmt.Errorf("failed to get usage period start at %s for owner %s: %w", at, ownerID.ID, err)
+	}
+
 	// Let's see if a snapshot should be saved
 	// TODO: it might be the case that we don't save any snapshots as they require a history breakpoint. To solve this,
 	// we should introduce artificial history breakpoints in the engine, but that would result in more streaming.Query calls, so first lets improve the visibility of what's happening.
 	if err := m.snapshotEngineResult(ctx, snapshotParams{
-		grants: grants,
-		owner:  ownerID,
-		before: m.getSnapshotBefore(clock.Now()),
-		meter:  owner.Meter,
+		grants:   grants,
+		owner:    ownerID,
+		notAfter: m.getSnapshotNotAfter(periodStart, clock.Now()),
+		meter:    owner.Meter,
 	}, result); err != nil {
 		return def, fmt.Errorf("failed to snapshot engine result: %w", err)
 	}
@@ -136,7 +141,7 @@ func (m *connector) GetBalanceAt(ctx context.Context, ownerID models.NamespacedI
 		return def, err
 	}
 
-	return m.GetBalanceSinceSnapshot(ctx, ownerID, snap, at)
+	return m.getBalanceSinceSnapshot(ctx, ownerID, snap, at)
 }
 
 func (m *connector) GetBalanceForPeriod(ctx context.Context, ownerID models.NamespacedID, period timeutil.ClosedPeriod) (engine.RunResult, error) {
@@ -226,7 +231,7 @@ func (m *connector) ResetUsageForOwner(ctx context.Context, ownerID models.Names
 	// check if reset is possible (not before current period)
 	periodStart, err := m.OwnerConnector.GetUsagePeriodStartAt(ctx, ownerID, clock.Now())
 	if err != nil {
-		if _, ok := err.(*grant.OwnerNotFoundError); ok {
+		if _, ok := lo.ErrorsAs[*grant.OwnerNotFoundError](err); ok {
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to get current usage period start for owner %s at %s: %w", ownerID.ID, at, err)
@@ -312,10 +317,10 @@ func (m *connector) ResetUsageForOwner(ctx context.Context, ownerID models.Names
 
 		// Let's save the snapshot
 		snap, err = m.saveSnapshot(ctx, snapshotParams{
-			grants: grants,
-			owner:  ownerID,
-			before: at,
-			meter:  owner.Meter,
+			grants:   grants,
+			owner:    ownerID,
+			notAfter: at,
+			meter:    owner.Meter,
 		}, snap)
 		if err != nil {
 			return nil, fmt.Errorf("failed to save snapshot: %w", err)

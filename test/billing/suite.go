@@ -45,6 +45,7 @@ import (
 	subjecthooks "github.com/openmeterio/openmeter/openmeter/subject/service/hooks"
 	"github.com/openmeterio/openmeter/openmeter/testutils"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
+	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/currencyx"
 	"github.com/openmeterio/openmeter/pkg/datetime"
 	"github.com/openmeterio/openmeter/pkg/framework/lockr"
@@ -106,7 +107,16 @@ func (s *BaseSuite) SetupSuite() {
 	if os.Getenv("TEST_DISABLE_ATLAS") != "" {
 		s.Require().NoError(dbClient.Schema.Create(context.Background()))
 	} else {
-		s.Require().NoError(migrate.Up(s.TestDB.URL))
+		migrator, err := migrate.New(migrate.MigrateOptions{
+			ConnectionString: s.TestDB.URL,
+			Migrations:       migrate.OMMigrationsConfig,
+			Logger:           testutils.NewLogger(t),
+		})
+		s.NoError(err)
+
+		defer migrator.CloseOrLogError()
+
+		s.NoError(migrator.Up())
 	}
 
 	// setup invoicing stack
@@ -167,8 +177,7 @@ func (s *BaseSuite) SetupSuite() {
 
 	// App
 	appAdapter, err := appadapter.New(appadapter.Config{
-		Client:  dbClient,
-		BaseURL: "http://localhost:8888",
+		Client: dbClient,
 	})
 	require.NoError(t, err)
 
@@ -226,12 +235,6 @@ func (s *BaseSuite) SetupSuite() {
 	require.NoError(t, err)
 	customerService.RegisterHooks(subjectCustomerHook)
 
-	subjectEntitlementValidatorHook, err := subjecthooks.NewEntitlementValidatorHook(subjecthooks.EntitlementValidatorHookConfig{
-		EntitlementService: entitlementRegistry.Entitlement,
-	})
-	require.NoError(t, err)
-	subjectService.RegisterHooks(subjectEntitlementValidatorHook)
-
 	// customer hooks
 	customerSubjectHook, err := customerservicehooks.NewSubjectCustomerHook(customerservicehooks.SubjectCustomerHookConfig{
 		Customer:         customerService,
@@ -241,13 +244,6 @@ func (s *BaseSuite) SetupSuite() {
 	})
 	require.NoError(t, err)
 	subjectService.RegisterHooks(customerSubjectHook)
-
-	customerSubjectValidatorHook, err := customerservicehooks.NewSubjectValidatorHook(customerservicehooks.SubjectValidatorHookConfig{
-		Customer: customerService,
-		Logger:   slog.Default(),
-	})
-	require.NoError(t, err)
-	subjectService.RegisterHooks(customerSubjectValidatorHook)
 
 	entitlementValidatorHook, err := customerservicehooks.NewEntitlementValidatorHook(customerservicehooks.EntitlementValidatorHookConfig{
 		EntitlementService: entitlementRegistry.Entitlement,
@@ -291,7 +287,7 @@ func (s *BaseSuite) CreateTestCustomer(ns string, subjectKey string) *customer.C
 				PostalCode: lo.ToPtr("12345"),
 			},
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{subjectKey},
 			},
 		},
@@ -326,31 +322,18 @@ func (s *BaseSuite) DebugDumpInvoice(h string, i billing.Invoice) {
 			deleted = " (deleted)"
 		}
 
-		switch line.Type {
-		case billing.InvoiceLineTypeFee:
-			s.T().Logf("fee  [%s..%s] childUniqueReferenceID: %s, invoiceAt: %s, qty: %s, unit price: %s (total=%s) %s\n",
-				line.Period.Start.Format(time.RFC3339),
-				line.Period.End.Format(time.RFC3339),
-				lo.FromPtrOr(line.ChildUniqueReferenceID, "null"),
-				line.InvoiceAt.Format(time.RFC3339),
-				line.FlatFee.Quantity.String(),
-				line.FlatFee.PerUnitAmount.String(),
-				line.Totals.Total.String(),
-				deleted)
-		case billing.InvoiceLineTypeUsageBased:
-			priceJson, err := json.Marshal(line.UsageBased.Price)
-			s.NoError(err)
+		priceJson, err := json.Marshal(line.UsageBased.Price)
+		s.NoError(err)
 
-			s.T().Logf("usage[%s..%s] childUniqueReferenceID: %s, invoiceAt: %s, qty: %s, price: %s (total=%s) %s\n",
-				line.Period.Start.Format(time.RFC3339),
-				line.Period.End.Format(time.RFC3339),
-				lo.FromPtrOr(line.ChildUniqueReferenceID, "null"),
-				line.InvoiceAt.Format(time.RFC3339),
-				line.UsageBased.Quantity,
-				string(priceJson),
-				line.Totals.Total.String(),
-				deleted)
-		}
+		s.T().Logf("usage[%s..%s] childUniqueReferenceID: %s, invoiceAt: %s, qty: %s, price: %s (total=%s) %s\n",
+			line.Period.Start.Format(time.RFC3339),
+			line.Period.End.Format(time.RFC3339),
+			lo.FromPtrOr(line.ChildUniqueReferenceID, "null"),
+			line.InvoiceAt.Format(time.RFC3339),
+			line.UsageBased.Quantity,
+			string(priceJson),
+			line.Totals.Total.String(),
+			deleted)
 	}
 }
 
@@ -380,7 +363,7 @@ func (s *BaseSuite) CreateGatheringInvoice(t *testing.T, ctx context.Context, in
 
 	namespace := in.Customer.Namespace
 
-	now := time.Now()
+	now := clock.Now()
 	invoiceAt := now.Add(-time.Second)
 	periodEnd := now.Add(-24 * time.Hour)
 	periodStart := periodEnd.Add(-24 * 30 * time.Hour)
@@ -391,54 +374,36 @@ func (s *BaseSuite) CreateGatheringInvoice(t *testing.T, ctx context.Context, in
 			Customer: in.Customer.GetID(),
 			Currency: currencyx.Code(currency.USD),
 			Lines: []*billing.Line{
-				{
-					LineBase: billing.LineBase{
-						ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
-							Namespace: namespace,
-							Name:      "Test item1",
-						}),
-						Period: billing.Period{Start: periodStart, End: periodEnd},
-
-						InvoiceAt: invoiceAt,
-
-						Type:      billing.InvoiceLineTypeFee,
-						ManagedBy: billing.ManuallyManagedLine,
-
-						Currency: currencyx.Code(currency.USD),
-
+				billing.NewFlatFeeLine(
+					billing.NewFlatFeeLineInput{
+						Namespace:     namespace,
+						Period:        billing.Period{Start: periodStart, End: periodEnd},
+						InvoiceAt:     invoiceAt,
+						ManagedBy:     billing.ManuallyManagedLine,
+						Name:          "Test item1",
+						PerUnitAmount: alpacadecimal.NewFromFloat(100),
+						Currency:      currencyx.Code(currency.USD),
 						Metadata: map[string]string{
 							"key": "value",
 						},
+						PaymentTerm: productcatalog.InArrearsPaymentTerm,
 					},
-					FlatFee: &billing.FlatFeeLine{
-						PerUnitAmount: alpacadecimal.NewFromFloat(100),
-						Quantity:      alpacadecimal.NewFromFloat(1),
-						Category:      billing.FlatFeeCategoryRegular,
-						PaymentTerm:   productcatalog.InAdvancePaymentTerm,
-					},
-				},
-				{
-					LineBase: billing.LineBase{
-						ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
-							Namespace: namespace,
-							Name:      "Test item2",
-						}),
-						Period: billing.Period{Start: periodStart, End: periodEnd},
-
-						InvoiceAt: invoiceAt,
-
-						Type:      billing.InvoiceLineTypeFee,
-						ManagedBy: billing.ManuallyManagedLine,
-
-						Currency: currencyx.Code(currency.USD),
-					},
-					FlatFee: &billing.FlatFeeLine{
+				),
+				billing.NewFlatFeeLine(
+					billing.NewFlatFeeLineInput{
+						Namespace:     namespace,
+						Period:        billing.Period{Start: periodStart, End: periodEnd},
+						InvoiceAt:     invoiceAt,
+						ManagedBy:     billing.ManuallyManagedLine,
+						Name:          "Test item2",
 						PerUnitAmount: alpacadecimal.NewFromFloat(200),
-						Quantity:      alpacadecimal.NewFromFloat(1),
-						Category:      billing.FlatFeeCategoryRegular,
-						PaymentTerm:   productcatalog.InAdvancePaymentTerm,
+						Currency:      currencyx.Code(currency.USD),
+						Metadata: map[string]string{
+							"key": "value",
+						},
+						PaymentTerm: productcatalog.InArrearsPaymentTerm,
 					},
-				},
+				),
 			},
 		})
 
@@ -455,7 +420,7 @@ func (s *BaseSuite) CreateDraftInvoice(t *testing.T, ctx context.Context, in Dra
 
 	s.CreateGatheringInvoice(t, ctx, in)
 
-	now := time.Now()
+	now := clock.Now()
 	invoice, err := s.BillingService.InvoicePendingLines(ctx, billing.InvoicePendingLinesInput{
 		Customer: customer.CustomerID{
 			ID:        in.Customer.ID,

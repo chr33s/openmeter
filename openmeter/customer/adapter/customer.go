@@ -3,12 +3,12 @@ package adapter
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"entgo.io/ent/dialect/sql"
 	"github.com/samber/lo"
 
-	"github.com/openmeterio/openmeter/api"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
 	customerdb "github.com/openmeterio/openmeter/openmeter/ent/db/customer"
@@ -36,7 +36,9 @@ func (a *adapter) ListCustomers(ctx context.Context, input customer.ListCustomer
 
 		query := repo.db.Customer.Query().Where(customerdb.Namespace(input.Namespace))
 		query = WithSubjects(query, now)
-		query = WithActiveSubscriptions(query, now)
+		if slices.Contains(input.Expands, customer.ExpandSubscriptions) {
+			query = WithActiveSubscriptions(query, now)
+		}
 
 		// Do not return deleted customers by default
 		if !input.IncludeDeleted {
@@ -84,11 +86,11 @@ func (a *adapter) ListCustomers(ctx context.Context, input customer.ListCustomer
 		}
 
 		switch input.OrderBy {
-		case api.CustomerOrderById:
+		case "id":
 			query = query.Order(customerdb.ByID(order...))
-		case api.CustomerOrderByCreatedAt:
+		case "created_at":
 			query = query.Order(customerdb.ByCreatedAt(order...))
-		case api.CustomerOrderByName:
+		case "name":
 			fallthrough
 		default:
 			query = query.Order(customerdb.ByName(order...))
@@ -110,7 +112,7 @@ func (a *adapter) ListCustomers(ctx context.Context, input customer.ListCustomer
 				a.logger.WarnContext(ctx, "invalid query result: nil customer received")
 				continue
 			}
-			cust, err := CustomerFromDBEntity(*item)
+			cust, err := CustomerFromDBEntity(*item, input.Expands)
 			if err != nil {
 				return response, fmt.Errorf("failed to convert customer: %w", err)
 			}
@@ -183,13 +185,12 @@ func (a *adapter) ListCustomerUsageAttributions(ctx context.Context, input custo
 				return response, err
 			}
 
-			usageAttribution := streaming.CustomerUsageAttribution{
-				ID:          item.ID,
-				SubjectKeys: subjectKeys,
-			}
+			var usageAttribution streaming.CustomerUsageAttribution
 
-			if item.Key != "" {
-				usageAttribution.Key = &item.Key
+			if item.Key == "" {
+				usageAttribution = streaming.NewCustomerUsageAttribution(item.ID, nil, subjectKeys)
+			} else {
+				usageAttribution = streaming.NewCustomerUsageAttribution(item.ID, &item.Key, subjectKeys)
 			}
 
 			result = append(result, usageAttribution)
@@ -297,29 +298,31 @@ func (a *adapter) CreateCustomer(ctx context.Context, input customer.CreateCusto
 		// Create customer subjects
 		// TODO: customer.AddSubjects produces an invalid database query so we create it separately in a transaction.
 		// The number and shape of the queries executed is the same, it's a devex thing only.
-		_, err = repo.db.CustomerSubjects.
-			CreateBulk(
-				lo.Map(
-					input.UsageAttribution.SubjectKeys,
-					func(subjectKey string, _ int) *entdb.CustomerSubjectsCreate {
-						return repo.db.CustomerSubjects.Create().
-							SetNamespace(customerEntity.Namespace).
-							SetCustomerID(customerEntity.ID).
-							SetSubjectKey(subjectKey).
-							SetCreatedAt(customerEntity.CreatedAt)
-					},
-				)...,
-			).
-			Save(ctx)
-		if err != nil {
-			if entdb.IsConstraintError(err) {
-				return nil, customer.NewSubjectKeyConflictError(
-					input.Namespace,
-					input.UsageAttribution.SubjectKeys,
-				)
-			}
+		if input.UsageAttribution != nil && len(input.UsageAttribution.SubjectKeys) > 0 {
+			_, err = repo.db.CustomerSubjects.
+				CreateBulk(
+					lo.Map(
+						input.UsageAttribution.SubjectKeys,
+						func(subjectKey string, _ int) *entdb.CustomerSubjectsCreate {
+							return repo.db.CustomerSubjects.Create().
+								SetNamespace(customerEntity.Namespace).
+								SetCustomerID(customerEntity.ID).
+								SetSubjectKey(subjectKey).
+								SetCreatedAt(customerEntity.CreatedAt)
+						},
+					)...,
+				).
+				Save(ctx)
+			if err != nil {
+				if entdb.IsConstraintError(err) {
+					return nil, customer.NewSubjectKeyConflictError(
+						input.Namespace,
+						input.UsageAttribution.SubjectKeys,
+					)
+				}
 
-			return nil, fmt.Errorf("failed to create customer: failed to add subject keys: %w", err)
+				return nil, fmt.Errorf("failed to create customer: failed to add subject keys: %w", err)
+			}
 		}
 
 		return repo.GetCustomer(ctx, customer.GetCustomerInput{
@@ -388,7 +391,9 @@ func (a *adapter) GetCustomer(ctx context.Context, input customer.GetCustomerInp
 
 		query := repo.db.Customer.Query()
 		query = WithSubjects(query, now)
-		query = WithActiveSubscriptions(query, now)
+		if slices.Contains(input.Expands, customer.ExpandSubscriptions) {
+			query = WithActiveSubscriptions(query, now)
+		}
 
 		if input.CustomerID != nil {
 			query = query.Where(customerdb.Namespace(input.CustomerID.Namespace))
@@ -438,7 +443,7 @@ func (a *adapter) GetCustomer(ctx context.Context, input customer.GetCustomerInp
 			return nil, fmt.Errorf("invalid query result: nil customer received")
 		}
 
-		return CustomerFromDBEntity(*entity)
+		return CustomerFromDBEntity(*entity, input.Expands)
 	})
 }
 
@@ -455,22 +460,31 @@ func (a *adapter) GetCustomerByUsageAttribution(ctx context.Context, input custo
 
 		query := repo.db.Customer.Query().
 			Where(customerdb.Namespace(input.Namespace)).
-			Where(customerdb.HasSubjectsWith(
-				customersubjectsdb.SubjectKey(input.SubjectKey),
-				customersubjectsdb.Or(
-					customersubjectsdb.DeletedAtIsNil(),
-					customersubjectsdb.DeletedAtGT(now),
+			Where(
+				customerdb.Or(
+					// We lookup the customer by subject key in the subjects table
+					customerdb.HasSubjectsWith(
+						customersubjectsdb.SubjectKey(input.Key),
+						customersubjectsdb.Or(
+							customersubjectsdb.DeletedAtIsNil(),
+							customersubjectsdb.DeletedAtGT(now),
+						),
+					),
+					// Or else we lookup the customer by key in the customers table
+					customerdb.Key(input.Key),
 				),
-			)).
+			).
 			Where(customerdb.DeletedAtIsNil())
 		query = WithSubjects(query, now)
-		query = WithActiveSubscriptions(query, now)
+		if slices.Contains(input.Expands, customer.ExpandSubscriptions) {
+			query = WithActiveSubscriptions(query, now)
+		}
 
 		customerEntity, err := query.First(ctx)
 		if err != nil {
 			if entdb.IsNotFound(err) {
 				return nil, models.NewGenericNotFoundError(
-					fmt.Errorf("customer with subject key %s not found in %s namespace", input.SubjectKey, input.Namespace),
+					fmt.Errorf("customer with subject key %s not found in %s namespace", input.Key, input.Namespace),
 				)
 			}
 
@@ -481,7 +495,7 @@ func (a *adapter) GetCustomerByUsageAttribution(ctx context.Context, input custo
 			return nil, fmt.Errorf("invalid query result: nil customer received")
 		}
 
-		return CustomerFromDBEntity(*customerEntity)
+		return CustomerFromDBEntity(*customerEntity, input.Expands)
 	})
 }
 
@@ -610,9 +624,17 @@ func (a *adapter) UpdateCustomer(ctx context.Context, input customer.UpdateCusto
 			return nil, fmt.Errorf("invalid query result: nil customer received")
 		}
 
+		var previousSubjectKeys, newSubjectKeys []string
+		if previousCustomer.UsageAttribution != nil {
+			previousSubjectKeys = previousCustomer.UsageAttribution.SubjectKeys
+		}
+		if input.UsageAttribution != nil {
+			newSubjectKeys = input.UsageAttribution.SubjectKeys
+		}
+
 		subKeysToRemove, subKeysToAdd := lo.Difference(
-			lo.Uniq(previousCustomer.UsageAttribution.SubjectKeys),
-			lo.Uniq(input.UsageAttribution.SubjectKeys),
+			lo.Uniq(previousSubjectKeys),
+			lo.Uniq(newSubjectKeys),
 		)
 
 		now := clock.Now().UTC()

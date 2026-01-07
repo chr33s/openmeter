@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/samber/lo"
 	"go.opentelemetry.io/otel/attribute"
@@ -22,6 +23,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/subject"
 	subjectservicehooks "github.com/openmeterio/openmeter/openmeter/subject/service/hooks"
+	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/models"
 )
 
@@ -49,11 +51,88 @@ func (s subjectCustomerHook) provision(ctx context.Context, sub *subject.Subject
 			s.logger.WarnContext(ctx, "failed to provision customer for subject", "error", err)
 
 			return nil
-		} else {
-			s.logger.ErrorContext(ctx, "failed to provision customer for subject", "error", err)
-
-			return err
 		}
+
+		return err
+	}
+
+	return nil
+}
+
+func (s subjectCustomerHook) PostDelete(ctx context.Context, sub *subject.Subject) error {
+	ctx, span := s.tracer.Start(ctx, "subject_customer_hook.post_delete", trace.WithAttributes(
+		attribute.String("subject.id", sub.Id),
+		attribute.String("subject.key", sub.Key),
+	))
+	defer span.End()
+
+	// Let's get the customer by usage attribution
+	cus, err := s.provisioner.customer.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
+		Namespace: sub.Namespace,
+		Key:       sub.Key,
+	})
+	if err != nil {
+		if models.IsGenericNotFoundError(err) {
+			span.AddEvent("customer not found by usage attribution", trace.WithAttributes(
+				attribute.String("error", err.Error()),
+			))
+
+			return nil
+		}
+
+		return err
+	}
+
+	if cus == nil {
+		span.AddEvent("customer not found by usage attribution")
+
+		return nil
+	}
+
+	if cus.DeletedAt != nil && cus.DeletedAt.Before(clock.Now()) {
+		span.AddEvent("customer is deleted", trace.WithAttributes(
+			attribute.String("customer.id", cus.ID),
+			attribute.String("customer.deleted_at", cus.DeletedAt.Format(time.RFC3339)),
+		))
+
+		return nil
+	}
+
+	// Let's update the customer usage attribution
+	cus, err = s.provisioner.customer.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+		CustomerID: customer.CustomerID{
+			Namespace: cus.Namespace,
+			ID:        cus.ID,
+		},
+		CustomerMutate: func() customer.CustomerMutate {
+			mut := cus.AsCustomerMutate()
+
+			if mut.UsageAttribution != nil {
+				mut.UsageAttribution.SubjectKeys = lo.Filter(mut.UsageAttribution.SubjectKeys, func(key string, _ int) bool {
+					return key != sub.Key
+				})
+			}
+
+			return mut
+		}(),
+	})
+
+	if cus != nil {
+		var subjectKeysStr string
+		if cus.UsageAttribution != nil {
+			subjectKeysStr = strings.Join(cus.UsageAttribution.SubjectKeys, ", ")
+		}
+		span.AddEvent("updated customer usage attribution", trace.WithAttributes(
+			attribute.String("customer.usage_attribution.subject_keys", subjectKeysStr),
+		))
+	}
+
+	if err != nil {
+		span.AddEvent("failed to update customer usage attribution", trace.WithAttributes(
+			attribute.String("error", err.Error()),
+		))
+
+		return err
 	}
 
 	return nil
@@ -153,7 +232,12 @@ func CmpSubjectCustomer(s *subject.Subject, c *customer.Customer) bool {
 		return false
 	}
 
-	if !lo.Contains(c.UsageAttribution.SubjectKeys, s.Key) {
+	var subjectKeys []string
+	if c.UsageAttribution != nil {
+		subjectKeys = c.UsageAttribution.SubjectKeys
+	}
+
+	if !lo.Contains(subjectKeys, s.Key) {
 		return false
 	}
 
@@ -232,8 +316,8 @@ var ErrCustomerKeyConflict = errors.New("customer key conflict")
 func (p CustomerProvisioner) getCustomerForSubject(ctx context.Context, sub *subject.Subject) (*customer.Customer, error) {
 	// Try to find Customer for Subject by usage attribution
 	cus, err := p.customer.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
-		Namespace:  sub.Namespace,
-		SubjectKey: sub.Key,
+		Namespace: sub.Namespace,
+		Key:       sub.Key,
 	})
 	if err != nil && !models.IsGenericNotFoundError(err) {
 		return nil, err
@@ -265,7 +349,12 @@ func (p CustomerProvisioner) getCustomerForSubject(ctx context.Context, sub *sub
 	// while the Subject is not included in the Customers usage attribution.
 	// In this case the Customer must not match the Subject.
 	if cus != nil && cus.DeletedAt == nil {
-		if lo.Contains(cus.UsageAttribution.SubjectKeys, sub.Key) {
+		var subjectKeys []string
+		if cus.UsageAttribution != nil {
+			subjectKeys = cus.UsageAttribution.SubjectKeys
+		}
+
+		if lo.Contains(subjectKeys, sub.Key) {
 			return cus, nil
 		}
 
@@ -404,7 +493,7 @@ func (p CustomerProvisioner) EnsureCustomer(ctx context.Context, sub *subject.Su
 				}(),
 				Name:        lo.FromPtrOr(sub.DisplayName, sub.Key),
 				Description: nil,
-				UsageAttribution: customer.CustomerUsageAttribution{
+				UsageAttribution: &customer.CustomerUsageAttribution{
 					SubjectKeys: []string{sub.Key},
 				},
 				PrimaryEmail:   nil,
@@ -493,14 +582,6 @@ func (p CustomerProvisioner) EnsureStripeCustomer(ctx context.Context, customerI
 		},
 	})
 	if err != nil {
-		var preconditionError *app.AppCustomerPreConditionError
-
-		if errors.As(err, &preconditionError) && strings.Contains(err.Error(), "stripe customer not found in stripe account") {
-			p.logger.WarnContext(ctx, "failed to setup stripe customer id for customer", "error", err.Error())
-
-			return nil
-		}
-
 		return fmt.Errorf("failed to setup stripe customer id for customer [namespace=%s customer.id=%s]: %w",
 			customerID.Namespace, customerID.ID, err)
 	}

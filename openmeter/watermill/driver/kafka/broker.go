@@ -63,6 +63,11 @@ func (o *BrokerOptions) createKafkaConfig(role string) (*sarama.Config, error) {
 	config.Metadata.RefreshFrequency = o.KafkaConfig.TopicMetadataRefreshInterval.Duration()
 	config.ClientID = fmt.Sprintf("%s-%s", o.ClientID, role)
 
+	// Disable ApiVersionsRequest to avoid flooding the logs with ApiVersionsRequest errors from Sarama.
+	// Error while sending ApiVersionsRequest V3 to broker.
+	// See: https://github.com/IBM/sarama/blob/85f7d7b0cf3e3d4224df99c6b11f276c8fc49fd5/broker.go#L223-L251
+	config.ApiVersionsRequest = false
+
 	// These are globals, so we cannot append the publisher/subscriber name to them
 	logger := o.Logger.With(slog.String(string(semconv.OTelScopeNameKey), "sarama"))
 
@@ -80,7 +85,9 @@ func (o *BrokerOptions) createKafkaConfig(role string) (*sarama.Config, error) {
 		config.Net.SASL.Handshake = true
 
 		config.Net.TLS.Enable = true
-		config.Net.TLS.Config = &tls.Config{}
+		// Sarama has issues with min version TLS 1.3, so let's use the defaults for now
+		// remote error: tls: protocol version not supported
+		config.Net.TLS.Config = &tls.Config{} // nosemgrep
 
 		config.Net.SASL.User = o.KafkaConfig.SaslUsername
 		config.Net.SASL.Password = o.KafkaConfig.SaslPassword
@@ -102,6 +109,7 @@ func (o *BrokerOptions) createKafkaConfig(role string) (*sarama.Config, error) {
 	}
 
 	config.Producer.Retry.Max = 10
+	config.Producer.MaxMessageBytes = 2000000 // 2MB
 	config.Producer.Return.Successes = true
 
 	meterRegistry, err := metrics.NewRegistry(metrics.NewRegistryOptions{

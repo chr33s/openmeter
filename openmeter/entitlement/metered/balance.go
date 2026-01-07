@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/samber/lo"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/openmeterio/openmeter/openmeter/credit/engine"
 	"github.com/openmeterio/openmeter/openmeter/entitlement"
@@ -20,11 +22,12 @@ import (
 )
 
 type EntitlementBalance struct {
-	EntitlementID string    `json:"entitlementId"`
-	Balance       float64   `json:"balance"`
-	UsageInPeriod float64   `json:"usageInPeriod"`
-	Overage       float64   `json:"overage"`
-	StartOfPeriod time.Time `json:"startOfPeriod"`
+	EntitlementID             string    `json:"entitlementId"`
+	Balance                   float64   `json:"balance"`
+	UsageInPeriod             float64   `json:"usageInPeriod"`
+	Overage                   float64   `json:"overage"`
+	TotalAvailableGrantAmount float64   `json:"totalAvailableGrantAmount"`
+	StartOfPeriod             time.Time `json:"startOfPeriod"`
 }
 
 type EntitlementBalanceHistoryWindow struct {
@@ -52,7 +55,10 @@ type BalanceHistoryParams struct {
 }
 
 func (e *connector) GetEntitlementBalance(ctx context.Context, entitlementID models.NamespacedID, at time.Time) (*EntitlementBalance, error) {
-	ctx, span := e.tracer.Start(ctx, "meteredentitlement.GetEntitlementBalance")
+	ctx, span := e.tracer.Start(ctx, "meteredentitlement.GetEntitlementBalance", trace.WithAttributes(
+		attribute.String("entitlement_id", entitlementID.ID),
+		attribute.String("at", at.Format(time.RFC3339)),
+	))
 	defer span.End()
 
 	e.logger.DebugContext(ctx, "Getting entitlement balance", "entitlement", entitlementID, "at", at)
@@ -73,23 +79,19 @@ func (e *connector) GetEntitlementBalance(ctx context.Context, entitlementID mod
 		return nil, fmt.Errorf("failed to get current usage period start at: %w", err)
 	}
 
-	lastSnap, err := e.balanceConnector.GetLastValidSnapshotAt(ctx, nsOwner, at)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get last valid snapshot at: %w", err)
-	}
-
 	// Let's calculate balance since the last snapshot
-	res, err := e.balanceConnector.GetBalanceSinceSnapshot(ctx, nsOwner, lastSnap, at)
+	res, err := e.balanceConnector.GetBalanceAt(ctx, nsOwner, at)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get balance since snapshot: %w", err)
 	}
 
 	return &EntitlementBalance{
-		EntitlementID: entitlementID.ID,
-		Balance:       res.Snapshot.Balance(),
-		UsageInPeriod: res.Snapshot.Usage.Usage,
-		Overage:       res.Snapshot.Overage,
-		StartOfPeriod: startOfPeriod,
+		EntitlementID:             entitlementID.ID,
+		Balance:                   res.Snapshot.Balance(),
+		UsageInPeriod:             res.Snapshot.Usage.Usage,
+		Overage:                   res.Snapshot.Overage,
+		TotalAvailableGrantAmount: res.TotalAvailableGrantAmount(),
+		StartOfPeriod:             startOfPeriod,
 	}, nil
 }
 

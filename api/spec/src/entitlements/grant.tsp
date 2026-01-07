@@ -6,7 +6,7 @@ import "@typespec/openapi3";
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
 
-namespace OpenMeter.Entitlements;
+namespace OpenMeter;
 
 /**
  * Order by options for grants.
@@ -22,12 +22,17 @@ enum GrantOrderBy {
 
 @route("/api/v1/grants")
 @tag("Entitlements")
-interface Grants {
+@friendlyName("Grants")
+interface GrantsEndpoints {
   /**
    * List all grants for all the subjects and entitlements. This endpoint is intended for administrative purposes only.
    * To fetch the grants of a specific entitlement please use the /api/v1/subjects/{subjectKeyOrID}/entitlements/{entitlementOrFeatureID}/grants endpoint.
    * If page is provided that takes precedence and the paginated response is returned.
+   *
+   * ⚠️ __Deprecated__: Use [`GET /api/v2/grants`](#tag/entitlements/get/api/v2/grants) instead.
    */
+  #deprecated "Use `GET /api/v2/grants` instead"
+  #suppress "deprecated" "V1 Grants APIs will be removed on December 1st, 2025"
   @get
   @operationId("listGrants")
   @summary("List grants")
@@ -53,10 +58,10 @@ interface Grants {
      */
     @query includeDeleted?: boolean = false,
 
-    ...OpenMeter.QueryPagination,
-    ...OpenMeter.QueryLimitOffset,
-    ...OpenMeter.QueryOrdering<GrantOrderBy>,
-  ): Grant[] | OpenMeter.PaginatedResponse<Grant> | OpenMeter.CommonErrors;
+    ...QueryPagination,
+    ...QueryLimitOffset,
+    ...QueryOrdering<GrantOrderBy>,
+  ): Grant[] | PaginatedResponse<Grant> | CommonErrors;
 
   /**
    * Voiding a grant means it is no longer valid, it doesn't take part in further balance calculations. Voiding a grant does not retroactively take effect, meaning any usage that has already been attributed to the grant will remain, but future usage cannot be burnt down from the grant.
@@ -69,14 +74,16 @@ interface Grants {
     | {
         @statusCode _: 204;
       }
-    | OpenMeter.NotFoundError
-    | OpenMeter.CommonErrors
-    | OpenMeter.ConflictError;
+    | NotFoundError
+    | CommonErrors
+    | ConflictError;
 }
 
 /**
  * The grant.
  */
+#deprecated "Use GrantV2 instead"
+#suppress "deprecated" "V1 Grants APIs will be removed on December 1st, 2025"
 @friendlyName("EntitlementGrant")
 model Grant {
   ...ResourceTimestamps;
@@ -119,11 +126,19 @@ model Grant {
    * The recurrence period of the grant.
    */
   recurrence?: RecurringPeriod;
+
+  /**
+   * Grant annotations
+   */
+  @example(#{ issueAfterReset: true })
+  annotations?: Annotations;
 }
 
 /**
  * The grant creation input.
  */
+#deprecated "Use GrantCreateInputV2 instead"
+#suppress "deprecated" "V1 Grants APIs will be removed on December 1st, 2025"
 @friendlyName("EntitlementGrantCreateInput")
 model GrantCreateInput {
   /**

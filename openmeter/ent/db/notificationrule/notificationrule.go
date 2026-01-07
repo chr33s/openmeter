@@ -25,6 +25,10 @@ const (
 	FieldUpdatedAt = "updated_at"
 	// FieldDeletedAt holds the string denoting the deleted_at field in the database.
 	FieldDeletedAt = "deleted_at"
+	// FieldAnnotations holds the string denoting the annotations field in the database.
+	FieldAnnotations = "annotations"
+	// FieldMetadata holds the string denoting the metadata field in the database.
+	FieldMetadata = "metadata"
 	// FieldType holds the string denoting the type field in the database.
 	FieldType = "type"
 	// FieldName holds the string denoting the name field in the database.
@@ -60,6 +64,8 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldDeletedAt,
+	FieldAnnotations,
+	FieldMetadata,
 	FieldType,
 	FieldName,
 	FieldDisabled,
@@ -105,7 +111,7 @@ var (
 
 // TypeValidator is a validator for the "type" field enum values. It is called by the builders before save.
 func TypeValidator(_type notification.EventType) error {
-	switch _type {
+	switch _type.String() {
 	case "entitlements.balance.threshold", "entitlements.reset", "invoice.created", "invoice.updated":
 		return nil
 	default:

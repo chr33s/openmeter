@@ -1,15 +1,43 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/samber/lo"
 	"github.com/stripe/stripe-go/v80"
-	"golang.org/x/net/context"
 
 	"github.com/openmeterio/openmeter/pkg/slicesx"
 )
+
+// ListInvoiceLineItems lists the invoice line items for a given Stripe invoice.
+func (c *stripeAppClient) ListInvoiceLineItems(ctx context.Context, stripeInvoiceID string) ([]*stripe.InvoiceLineItem, error) {
+	if stripeInvoiceID == "" {
+		return nil, errors.New("stripe get invoice line items: invoice id is required")
+	}
+
+	invoiceLineItems := []*stripe.InvoiceLineItem{}
+
+	// Stripe SDK paginates automatically by default, so we don't need to handle pagination here.
+	invoiceLineItemsIterator := c.client.Invoices.ListLines(&stripe.InvoiceListLinesParams{
+		Invoice: &stripeInvoiceID,
+	})
+
+	// Map the invoice item IDs to the line IDs
+	for invoiceLineItemsIterator.Next() {
+		invoiceLine := invoiceLineItemsIterator.InvoiceLineItem()
+		if invoiceLine != nil && invoiceLine.InvoiceItem != nil {
+			invoiceLineItems = append(invoiceLineItems, invoiceLine)
+		}
+	}
+
+	if invoiceLineItemsIterator.Err() != nil {
+		return nil, fmt.Errorf("stripe get invoice line items: %w", invoiceLineItemsIterator.Err())
+	}
+
+	return invoiceLineItems, nil
+}
 
 // AddInvoiceLines is the input for adding invoice lines to a Stripe invoice.
 func (c *stripeAppClient) AddInvoiceLines(ctx context.Context, input AddInvoiceLinesInput) ([]StripeInvoiceItemWithLineID, error) {
@@ -17,7 +45,8 @@ func (c *stripeAppClient) AddInvoiceLines(ctx context.Context, input AddInvoiceL
 		return nil, fmt.Errorf("stripe add invoice lines: invalid input: %w", err)
 	}
 
-	items, err := slicesx.MapWithErr(input.Lines, func(i *stripe.InvoiceItemParams) (*stripe.InvoiceItem, error) {
+	// Add the invoice lines to the Stripe invoice, one by one.
+	createdInvoiceItems, err := slicesx.MapWithErr(input.Lines, func(i *stripe.InvoiceItemParams) (*stripe.InvoiceItem, error) {
 		i.Invoice = stripe.String(input.StripeInvoiceID)
 		return c.client.InvoiceItems.New(i)
 	})
@@ -25,38 +54,37 @@ func (c *stripeAppClient) AddInvoiceLines(ctx context.Context, input AddInvoiceL
 		return nil, fmt.Errorf("stripe add invoice lines: %w", err)
 	}
 
-	if len(items) == 0 {
+	if len(createdInvoiceItems) == 0 {
 		return nil, nil
 	}
 
-	invoice, err := c.client.Invoices.Get(input.StripeInvoiceID, nil)
+	// Creating an invoice item in Stripe does not return it's Stripe Invoice Line Item ID,
+	// so we need to list the invoice line items to get the line IDs.
+	invoiceLineItems, err := c.ListInvoiceLineItems(ctx, input.StripeInvoiceID)
 	if err != nil {
-		return nil, fmt.Errorf("stripe add invoice lines: get invoice: %w", err)
+		return nil, fmt.Errorf("stripe add invoice lines: get invoice line items: %w", err)
 	}
 
-	itemIDToLineID := make(map[string]string, len(items))
-	if invoice.Lines != nil {
-		for _, item := range invoice.Lines.Data {
-			if item != nil && item.InvoiceItem != nil {
-				itemIDToLineID[item.InvoiceItem.ID] = item.ID
-			}
-		}
-	}
+	// We know the invoice item ID from the creation above so we key line items by that
+	invoiceLineItemByInvoiceItemID := lo.KeyBy(invoiceLineItems, func(i *stripe.InvoiceLineItem) string {
+		return i.InvoiceItem.ID
+	})
 
-	lines := make([]StripeInvoiceItemWithLineID, 0, len(items))
-	for _, item := range items {
-		lineID, found := itemIDToLineID[item.ID]
+	// Lookup the line IDs for the invoice items
+	createdLines := make([]StripeInvoiceItemWithLineID, 0, len(createdInvoiceItems))
+	for _, createdInvoiceItem := range createdInvoiceItems {
+		invoiceLineItem, found := invoiceLineItemByInvoiceItemID[createdInvoiceItem.ID]
 		if !found {
-			return nil, fmt.Errorf("stripe add invoice lines: line not found: %s", item.ID)
+			return nil, fmt.Errorf("stripe add invoice lines: line not found: %s", createdInvoiceItem.ID)
 		}
 
-		lines = append(lines, StripeInvoiceItemWithLineID{
-			InvoiceItem: item,
-			LineID:      lineID,
+		createdLines = append(createdLines, StripeInvoiceItemWithLineID{
+			InvoiceItem: createdInvoiceItem,
+			LineID:      invoiceLineItem.ID,
 		})
 	}
 
-	return lines, nil
+	return createdLines, nil
 }
 
 // UpdateInvoiceLines is the input for updating invoice lines on a Stripe invoice.

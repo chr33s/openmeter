@@ -5,7 +5,7 @@ import "@typespec/openapi3";
 using TypeSpec.Http;
 using TypeSpec.OpenAPI;
 
-namespace OpenMeter.Notification;
+namespace OpenMeter;
 
 /**
  * Type of the notification channel.
@@ -59,6 +59,8 @@ model NotificationChannelCommon<T extends NotificationChannelType> {
   @visibility(Lifecycle.Read, Lifecycle.Create, Lifecycle.Update)
   @summary("Channel Name")
   @example("customer-webhook")
+  @minLength(1)
+  @maxLength(256)
   name: string;
 
   /**
@@ -68,6 +70,20 @@ model NotificationChannelCommon<T extends NotificationChannelType> {
   @summary("Channel Disabled")
   @example(true)
   disabled?: boolean = false;
+
+  /**
+   * Set of key-value pairs managed by the system. Cannot be modified by user.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Annotations")
+  annotations?: Annotations;
+
+  /**
+   * Additional metadata for the resource.
+   */
+  @visibility(Lifecycle.Read, Lifecycle.Create, Lifecycle.Update)
+  @summary("Metadata")
+  metadata?: Metadata | null;
 }
 
 /**
@@ -144,7 +160,8 @@ enum NotificationChannelOrderBy {
 
 @route("/api/v1/notification/channels")
 @tag("Notifications")
-interface Channels {
+@friendlyName("NotificationChannels")
+interface NotificationChannelsEndpoints {
   /**
    * List all notification channels.
    */
@@ -170,9 +187,9 @@ interface Channels {
     @example(false)
     includeDisabled?: boolean = false,
 
-    ...OpenMeter.QueryPagination,
-    ...OpenMeter.QueryOrdering<NotificationChannelOrderBy>,
-  ): OpenMeter.PaginatedResponse<NotificationChannel> | OpenMeter.CommonErrors;
+    ...QueryPagination,
+    ...QueryOrdering<NotificationChannelOrderBy>,
+  ): PaginatedResponse<NotificationChannel> | CommonErrors;
 
   /**
    * Create a new notification channel.
@@ -183,7 +200,7 @@ interface Channels {
   create(@body request: NotificationChannelCreateRequest): {
     @statusCode _: 201;
     @body body: NotificationChannel;
-  } | OpenMeter.CommonErrors;
+  } | CommonErrors;
 
   /**
    * Update notification channel.
@@ -197,7 +214,7 @@ interface Channels {
   ): {
     @statusCode _: 200;
     @body body: NotificationChannel;
-  } | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  } | NotFoundError | CommonErrors;
 
   /**
    * Get a notification channel by id.
@@ -205,9 +222,10 @@ interface Channels {
   @get
   @operationId("getNotificationChannel")
   @summary("Get notification channel")
-  get(
-    @path channelId: ULID,
-  ): NotificationChannel | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  get(@path channelId: ULID): {
+    @statusCode _: 200;
+    @body body: NotificationChannel;
+  } | NotFoundError | CommonErrors;
 
   /**
    * Soft delete notification channel by id.
@@ -219,5 +237,5 @@ interface Channels {
   @summary("Delete a notification channel")
   delete(@path channelId: ULID): {
     @statusCode _: 204;
-  } | OpenMeter.NotFoundError | OpenMeter.CommonErrors;
+  } | NotFoundError | CommonErrors;
 }

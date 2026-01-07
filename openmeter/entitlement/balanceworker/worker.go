@@ -14,6 +14,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/credit/grant"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/entitlement"
+	"github.com/openmeterio/openmeter/openmeter/entitlement/balanceworker/events"
 	meteredentitlement "github.com/openmeterio/openmeter/openmeter/entitlement/metered"
 	"github.com/openmeterio/openmeter/openmeter/entitlement/snapshot"
 	"github.com/openmeterio/openmeter/openmeter/event/metadata"
@@ -34,8 +35,9 @@ const (
 type BatchedIngestEventHandler = func(ctx context.Context, event ingestevents.EventBatchedIngest) error
 
 type WorkerOptions struct {
-	SystemEventsTopic string
-	IngestEventsTopic string
+	SystemEventsTopic        string
+	IngestEventsTopic        string
+	BalanceWorkerEventsTopic string
 
 	Router   router.Options
 	EventBus eventbus.Publisher
@@ -52,7 +54,7 @@ type WorkerOptions struct {
 
 	Logger *slog.Logger
 
-	FilterStateStorage FilterStateStorage
+	HighWatermarkCacheSize int
 }
 
 func (o *WorkerOptions) Validate() error {
@@ -80,6 +82,10 @@ func (o *WorkerOptions) Validate() error {
 		return errors.New("ingest events topic is required")
 	}
 
+	if o.BalanceWorkerEventsTopic == "" {
+		return errors.New("balance worker events topic is required")
+	}
+
 	if o.MetricMeter == nil {
 		return errors.New("metric meter is required")
 	}
@@ -96,8 +102,8 @@ func (o *WorkerOptions) Validate() error {
 		return errors.New("subject service is required")
 	}
 
-	if err := o.FilterStateStorage.Validate(); err != nil {
-		return fmt.Errorf("filter state storage: %w", err)
+	if o.HighWatermarkCacheSize <= 0 {
+		return errors.New("high watermark cache size must be positive")
 	}
 
 	return nil
@@ -135,10 +141,10 @@ func New(opts WorkerOptions) (*Worker, error) {
 	}
 
 	filters, err := NewEntitlementFilters(EntitlementFiltersConfig{
-		NotificationService: opts.NotificationService,
-		MetricMeter:         opts.MetricMeter,
-		StateStorage:        opts.FilterStateStorage,
-		Logger:              opts.Logger,
+		NotificationService:    opts.NotificationService,
+		MetricMeter:            opts.MetricMeter,
+		HighWatermarkCacheSize: opts.HighWatermarkCacheSize,
+		Logger:                 opts.Logger,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create entitlement filters: %w", err)
@@ -172,14 +178,19 @@ func New(opts WorkerOptions) (*Worker, error) {
 		eventHandler,
 	)
 
-	if opts.SystemEventsTopic != opts.IngestEventsTopic {
-		r.AddConsumerHandler(
-			"balance_worker_ingest_events",
-			opts.IngestEventsTopic,
-			opts.Router.Subscriber,
-			eventHandler,
-		)
-	}
+	r.AddConsumerHandler(
+		"balance_worker_ingest_events",
+		opts.IngestEventsTopic,
+		opts.Router.Subscriber,
+		eventHandler,
+	)
+
+	r.AddConsumerHandler(
+		"balance_worker_balance_worker_events",
+		opts.BalanceWorkerEventsTopic,
+		opts.Router.Subscriber,
+		eventHandler,
+	)
 
 	return worker, nil
 }
@@ -196,103 +207,85 @@ func (w *Worker) eventHandler(metricMeter metric.Meter) (message.NoPublishHandle
 		w.opts.EventBus.Marshaler(),
 		metricMeter,
 
-		// Entitlement created event
-		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *entitlement.EntitlementCreatedEvent) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.ID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.ID)),
-					WithEventAt(event.CreatedAt),
-				))
-		}),
-
 		// Entitlement created event v2
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *entitlement.EntitlementCreatedEventV2) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Entitlement.ID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Entitlement.ID)),
-					WithEventAt(event.Entitlement.ManagedModel.CreatedAt),
-				))
-		}),
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Entitlement.ID},
 
-		// Entitlement deleted event
-		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *entitlement.EntitlementDeletedEvent) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.ID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.ID)),
-					WithEventAt(lo.FromPtrOr(event.DeletedAt, time.Now())),
-				))
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Entitlement.ID),
+				AsOf:                event.Entitlement.ManagedModel.CreatedAt,
+				SourceOperation:     events.OperationTypeEntitlementCreated,
+			})
 		}),
 
 		// Entitlement deleted event v2
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *entitlement.EntitlementDeletedEventV2) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Entitlement.ID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Entitlement.ID)),
-					WithEventAt(lo.FromPtrOr(event.Entitlement.ManagedModel.DeletedAt, time.Now())),
-				))
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Entitlement.ID},
+
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Entitlement.ID),
+				AsOf:                lo.FromPtrOr(event.Entitlement.ManagedModel.DeletedAt, time.Now()),
+				SourceOperation:     events.OperationTypeEntitlementDeleted,
+			})
 		}),
 
 		// Grant created event
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *grant.CreatedEvent) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.OwnerID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.OwnerID, metadata.EntityGrant, event.ID)),
-					WithEventAt(event.CreatedAt),
-				))
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.OwnerID},
+
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.OwnerID, metadata.EntityGrant, event.ID),
+				AsOf:                event.CreatedAt,
+				SourceOperation:     events.OperationTypeGrantCreated,
+			})
 		}),
 
 		// Grant created event v2
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *grant.CreatedEventV2) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Grant.OwnerID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Grant.OwnerID, metadata.EntityGrant, event.Grant.ID)),
-					WithEventAt(event.Grant.ManagedModel.CreatedAt),
-				))
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Grant.OwnerID},
+
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Grant.OwnerID, metadata.EntityGrant, event.Grant.ID),
+				AsOf:                event.Grant.ManagedModel.CreatedAt,
+				SourceOperation:     events.OperationTypeGrantCreated,
+			})
 		}),
 
 		// Grant voided event
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *grant.VoidedEvent) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.OwnerID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.OwnerID, metadata.EntityGrant, event.ID)),
-					WithEventAt(event.UpdatedAt),
-				))
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.OwnerID},
+
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.OwnerID, metadata.EntityGrant, event.ID),
+				AsOf:                event.UpdatedAt,
+				SourceOperation:     events.OperationTypeGrantVoided,
+			})
 		}),
 
 		// Grant voided event v2
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *grant.VoidedEventV2) error {
-			return w.opts.EventBus.
-				WithContext(ctx).
-				PublishIfNoError(w.handleEntitlementEvent(
-					ctx,
-					pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Grant.OwnerID},
-					WithSource(metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Grant.OwnerID, metadata.EntityGrant, event.Grant.ID)),
-					WithEventAt(event.Grant.ManagedModel.UpdatedAt),
-				))
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.Grant.OwnerID},
+
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.Grant.OwnerID, metadata.EntityGrant, event.Grant.ID),
+				AsOf:                event.Grant.ManagedModel.UpdatedAt,
+				SourceOperation:     events.OperationTypeGrantVoided,
+			})
 		}),
 
 		// Metered entitlement reset event
 		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *meteredentitlement.EntitlementResetEvent) error {
+			return w.opts.EventBus.Publish(ctx, events.RecalculateEvent{
+				Entitlement: pkgmodels.NamespacedID{Namespace: event.Namespace.ID, ID: event.EntitlementID},
+
+				OriginalEventSource: metadata.ComposeResourcePath(event.Namespace.ID, metadata.EntityEntitlement, event.EntitlementID),
+				AsOf:                event.ResetAt,
+				SourceOperation:     events.OperationTypeMeteredEntitlementReset,
+			})
+		}),
+
+		// Metered entitlement reset event v2
+		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *meteredentitlement.EntitlementResetEventV2) error {
 			return w.opts.EventBus.
 				WithContext(ctx).
 				PublishIfNoError(w.handleEntitlementEvent(
@@ -311,6 +304,40 @@ func (w *Worker) eventHandler(metricMeter metric.Meter) (message.NoPublishHandle
 			}
 
 			return w.handleBatchedIngestEvent(ctx, *event)
+		}),
+
+		// Balance worker triggered recalculation event
+		grouphandler.NewGroupEventHandler(func(ctx context.Context, event *events.RecalculateEvent) error {
+			if event == nil {
+				return errors.New("nil recalculate event")
+			}
+
+			// Let's map the operation type to the target snapshot operation type
+			snapshotOperation := snapshot.ValueOperationUpdate
+			switch event.SourceOperation {
+			case events.OperationTypeMeteredEntitlementReset:
+				snapshotOperation = snapshot.ValueOperationReset
+			case events.OperationTypeEntitlementDeleted:
+				snapshotOperation = snapshot.ValueOperationDelete
+			}
+
+			options := []handleOption{
+				WithSource(event.OriginalEventSource),
+				WithEventAt(event.AsOf),
+				WithSourceOperation(snapshotOperation),
+			}
+
+			if len(event.RawIngestedEvents) > 0 {
+				options = append(options, WithRawIngestedEvents(event.RawIngestedEvents))
+			}
+
+			return w.opts.EventBus.
+				WithContext(ctx).
+				PublishIfNoError(w.handleEntitlementEvent(
+					ctx,
+					pkgmodels.NamespacedID{Namespace: event.Entitlement.Namespace, ID: event.Entitlement.ID},
+					options...,
+				))
 		}),
 	)
 	if err != nil {

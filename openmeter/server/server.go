@@ -15,6 +15,8 @@ import (
 	oapimiddleware "github.com/oapi-codegen/nethttp-middleware"
 
 	"github.com/openmeterio/openmeter/api"
+	v3server "github.com/openmeterio/openmeter/api/v3/server"
+	"github.com/openmeterio/openmeter/openmeter/namespace/namespacedriver"
 	"github.com/openmeterio/openmeter/openmeter/portal/authenticator"
 	"github.com/openmeterio/openmeter/openmeter/server/router"
 	"github.com/openmeterio/openmeter/pkg/contextx"
@@ -58,9 +60,12 @@ type RouterHooks struct {
 	Routes      []RouteHook
 }
 
+type PostAuthMiddlewares []api.MiddlewareFunc
+
 type Config struct {
-	RouterConfig router.Config
-	RouterHooks  RouterHooks
+	RouterConfig        router.Config
+	RouterHooks         RouterHooks
+	PostAuthMiddlewares PostAuthMiddlewares
 }
 
 func NewServer(config *Config) (*Server, error) {
@@ -83,60 +88,100 @@ func NewServer(config *Config) (*Server, error) {
 
 	r := chi.NewRouter()
 
-	// Apply middlewares
-	for _, middlewareHook := range config.RouterHooks.Middlewares {
-		middlewareHook(r)
+	v3Middlewares := []func(http.Handler) http.Handler{
+		middleware.RealIP,
+		middleware.RequestID,
+		func(h http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := r.Context()
+				ctx = contextx.WithAttrs(ctx, server.GetRequestAttributes(r))
+
+				h.ServeHTTP(w, r.WithContext(ctx))
+			})
+		},
+		server.NewRequestLoggerMiddleware(slog.Default().Handler()),
+		middleware.Recoverer,
 	}
 
-	r.Use(middleware.RealIP)
-	r.Use(middleware.RequestID)
-	r.Use(func(h http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ctx := r.Context()
-			ctx = contextx.WithAttrs(ctx, server.GetRequestAttributes(r))
+	v3API, err := v3server.NewServer(&v3server.Config{
+		BaseURL:                 "/api/v3",
+		NamespaceDecoder:        namespacedriver.StaticNamespaceDecoder(config.RouterConfig.NamespaceManager.GetDefaultNamespace()),
+		ErrorHandler:            config.RouterConfig.ErrorHandler,
+		IngestService:           config.RouterConfig.IngestService,
+		CustomerService:         config.RouterConfig.Customer,
+		EntitlementService:      config.RouterConfig.EntitlementConnector,
+		MeterService:            config.RouterConfig.MeterManageService,
+		PlanService:             config.RouterConfig.Plan,
+		PlanSubscriptionService: config.RouterConfig.PlanSubscriptionService,
+		SubscriptionService:     config.RouterConfig.SubscriptionService,
+		Middlewares:             v3Middlewares,
+	})
+	if err != nil {
+		slog.Error("failed to create v3 API", "error", err)
+		return nil, err
+	}
 
-			h.ServeHTTP(w, r.WithContext(ctx))
+	var v3RegisterErr error
+	r.Group(func(r chi.Router) {
+		v3RegisterErr = v3API.RegisterRoutes(r)
+	})
+	if v3RegisterErr != nil {
+		slog.Error("failed to register v3 API routes", "error", v3RegisterErr)
+		return nil, fmt.Errorf("register v3 routes: %w", v3RegisterErr)
+	}
+
+	r.Group(func(r chi.Router) {
+		// Apply middlewares
+		for _, middlewareHook := range config.RouterHooks.Middlewares {
+			middlewareHook(r)
+		}
+
+		r.Use(middleware.RealIP)
+		r.Use(middleware.RequestID)
+		r.Use(func(h http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx := r.Context()
+				ctx = contextx.WithAttrs(ctx, server.GetRequestAttributes(r))
+
+				h.ServeHTTP(w, r.WithContext(ctx))
+			})
 		})
-	})
-	r.Use(server.NewRequestLoggerMiddleware(slog.Default().Handler()))
-	r.Use(middleware.Recoverer)
-	if config.RouterConfig.PortalCORSEnabled {
-		// Enable CORS for portal requests
-		r.Use(corsHandler(corsOptions{
-			AllowedPaths: []string{"/api/v1/portal/meters"},
-			Options: cors.Options{
-				AllowOriginFunc: func(r *http.Request, origin string) bool {
-					return true
+		r.Use(server.NewRequestLoggerMiddleware(slog.Default().Handler()))
+		r.Use(middleware.Recoverer)
+		if config.RouterConfig.PortalCORSEnabled {
+			// Enable CORS for portal requests
+			r.Use(corsHandler(corsOptions{
+				AllowedPaths: []string{"/api/v1/portal/meters"},
+				Options: cors.Options{
+					AllowOriginFunc: func(r *http.Request, origin string) bool {
+						return true
+					},
+					AllowedMethods:   []string{http.MethodGet, http.MethodOptions},
+					AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+					AllowCredentials: true,
+					MaxAge:           1728000,
 				},
-				AllowedMethods:   []string{http.MethodGet, http.MethodOptions},
-				AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
-				AllowCredentials: true,
-				MaxAge:           1728000,
-			},
-		}))
-	}
-	r.Use(render.SetContentType(render.ContentTypeJSON))
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		models.NewStatusProblem(r.Context(), nil, http.StatusNotFound).Respond(w)
-	})
-	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
-		models.NewStatusProblem(r.Context(), nil, http.StatusMethodNotAllowed).Respond(w)
-	})
+			}))
+		}
+		r.Use(render.SetContentType(render.ContentTypeJSON))
+		r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+			models.NewStatusProblem(r.Context(), nil, http.StatusNotFound).Respond(w)
+		})
+		r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+			models.NewStatusProblem(r.Context(), nil, http.StatusMethodNotAllowed).Respond(w)
+		})
 
-	// Serve the OpenAPI spec
-	r.Get("/api/swagger.json", func(w http.ResponseWriter, r *http.Request) {
-		render.JSON(w, r, swagger)
-	})
+		// Serve the OpenAPI spec
+		r.Get("/api/swagger.json", func(w http.ResponseWriter, r *http.Request) {
+			render.JSON(w, r, swagger)
+		})
 
-	// Apply route handlers
-	for _, routeHook := range config.RouterHooks.Routes {
-		routeHook(r)
-	}
+		// Apply route handlers
+		for _, routeHook := range config.RouterHooks.Routes {
+			routeHook(r)
+		}
 
-	// Use validator middleware to check requests against the OpenAPI schema
-	_ = api.HandlerWithOptions(impl, api.ChiServerOptions{
-		BaseRouter: r,
-		Middlewares: []api.MiddlewareFunc{
+		middlewares := []api.MiddlewareFunc{
 			authenticator.NewAuthenticator(config.RouterConfig.Portal, config.RouterConfig.ErrorHandler).NewAuthenticatorMiddlewareFunc(swagger),
 			oapimiddleware.OapiRequestValidatorWithOptions(swagger, &oapimiddleware.Options{
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
@@ -152,11 +197,19 @@ func NewServer(config *Config) (*Server, error) {
 					ExcludeReadOnlyValidations: true,
 				},
 			}),
-		},
-		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-			config.RouterConfig.ErrorHandler.HandleContext(r.Context(), err)
-			errorHandlerReply(w, r, err)
-		},
+		}
+
+		middlewares = append(middlewares, config.PostAuthMiddlewares...)
+
+		// Use validator middleware to check requests against the OpenAPI schema
+		_ = api.HandlerWithOptions(impl, api.ChiServerOptions{
+			BaseRouter:  r,
+			Middlewares: middlewares,
+			ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+				config.RouterConfig.ErrorHandler.HandleContext(r.Context(), err)
+				errorHandlerReply(w, r, err)
+			},
+		})
 	})
 
 	return &Server{

@@ -45,6 +45,14 @@ func NewCreateRuleInput(namespace string, name string, channels ...string) notif
 			},
 		},
 		Channels: channels,
+		Metadata: models.Metadata{
+			"namespace": namespace,
+			"name":      name,
+		},
+		Annotations: models.Annotations{
+			"namespace": namespace,
+			"name":      name,
+		},
 	}
 }
 
@@ -104,7 +112,7 @@ func (s *RuleTestSuite) Setup(ctx context.Context, t *testing.T) {
 			Key:                 TestFeatureKey,
 			Namespace:           s.Env.Namespace(),
 			MeterSlug:           convert.ToPointer(meter.Key),
-			MeterGroupByFilters: meter.GroupBy,
+			MeterGroupByFilters: feature.ConvertMapStringToMeterGroupByFilters(meter.GroupBy),
 		})
 	}
 	require.NoError(t, err, "Creating feature must not return error")
@@ -151,6 +159,8 @@ func (s *RuleTestSuite) TestCreate(ctx context.Context, t *testing.T) {
 			assert.Equal(t, test.CreateIn.Disabled, rule.Disabled, "Rule must not be disabled")
 			assert.Equal(t, test.CreateIn.Type, rule.Type, "Rule type must be the same")
 			assert.EqualValues(t, test.CreateIn.Config, rule.Config, "Rule config must be the same")
+			assert.Equalf(t, test.CreateIn.Annotations, rule.Annotations, "Annotations must be the same")
+			assert.Equalf(t, test.CreateIn.Metadata, rule.Metadata, "Metadata must be the same")
 		})
 	}
 }
@@ -158,12 +168,12 @@ func (s *RuleTestSuite) TestCreate(ctx context.Context, t *testing.T) {
 func (s *RuleTestSuite) TestList(ctx context.Context, t *testing.T) {
 	service := s.Env.Notification()
 
-	createIn1 := NewCreateRuleInput("NotificationListRule1", s.channel.ID)
+	createIn1 := NewCreateRuleInput(s.Env.Namespace(), "NotificationListRule1", s.channel.ID)
 	rule1, err := service.CreateRule(ctx, createIn1)
 	require.NoError(t, err, "Creating rule must not return error")
 	require.NotNil(t, rule1, "Rule must not be nil")
 
-	createIn2 := NewCreateRuleInput("NotificationListRule2", s.channel.ID)
+	createIn2 := NewCreateRuleInput(s.Env.Namespace(), "NotificationListRule2", s.channel.ID)
 	rule2, err := service.CreateRule(ctx, createIn2)
 	require.NoError(t, err, "Creating rule must not return error")
 	require.NotNil(t, rule2, "Rule must not be nil")
@@ -201,16 +211,19 @@ func (s *RuleTestSuite) TestList(ctx context.Context, t *testing.T) {
 func (s *RuleTestSuite) TestUpdate(ctx context.Context, t *testing.T) {
 	service := s.Env.Notification()
 
-	createIn := NewCreateRuleInput("NotificationUpdateRule1", s.channel.ID)
+	createIn := NewCreateRuleInput(s.Env.Namespace(), "NotificationUpdateRule1", s.channel.ID)
 	rule, err := service.CreateRule(ctx, createIn)
 	require.NoError(t, err, "Creating rule must not return error")
 	require.NotNil(t, rule, "Rule must not be nil")
 
 	updateIn := notification.UpdateRuleInput{
-		NamespacedModel: rule.NamespacedModel,
-		Type:            rule.Type,
-		Name:            "NotificationUpdateRule2",
-		Disabled:        true,
+		NamespacedID: models.NamespacedID{
+			Namespace: rule.Namespace,
+			ID:        rule.ID,
+		},
+		Type:     rule.Type,
+		Name:     "NotificationUpdateRule2",
+		Disabled: true,
 		Config: notification.RuleConfig{
 			RuleConfigMeta: notification.RuleConfigMeta{
 				Type: rule.Config.Type,
@@ -223,7 +236,15 @@ func (s *RuleTestSuite) TestUpdate(ctx context.Context, t *testing.T) {
 				}),
 			},
 		},
-		ID: rule.ID,
+		Channels: []string{s.channel.ID},
+		Metadata: models.Metadata{
+			"namespace": rule.Namespace,
+			"name":      "NotificationUpdateRule2",
+		},
+		Annotations: models.Annotations{
+			"namespace": rule.Namespace,
+			"name":      "NotificationUpdateRule2",
+		},
 	}
 
 	rule2, err := service.UpdateRule(ctx, updateIn)
@@ -233,12 +254,14 @@ func (s *RuleTestSuite) TestUpdate(ctx context.Context, t *testing.T) {
 	assert.Equal(t, updateIn.Disabled, rule2.Disabled, "Rule must not be disabled")
 	assert.Equal(t, updateIn.Type, rule2.Type, "Rule type must be the same")
 	assert.EqualValues(t, updateIn.Config, rule2.Config, "Rule config must be the same")
+	assert.Equalf(t, updateIn.Annotations, rule2.Annotations, "Annotations must be the same")
+	assert.Equalf(t, updateIn.Metadata, rule2.Metadata, "Metadata must be the same")
 }
 
 func (s *RuleTestSuite) TestDelete(ctx context.Context, t *testing.T) {
 	service := s.Env.Notification()
 
-	createIn := NewCreateRuleInput("NotificationDeleteRule1", s.channel.ID)
+	createIn := NewCreateRuleInput(s.Env.Namespace(), "NotificationDeleteRule1", s.channel.ID)
 
 	rule, err := service.CreateRule(ctx, createIn)
 	require.NoError(t, err, "Creating rule must not return error")
@@ -255,7 +278,7 @@ func (s *RuleTestSuite) TestDelete(ctx context.Context, t *testing.T) {
 func (s *RuleTestSuite) TestGet(ctx context.Context, t *testing.T) {
 	service := s.Env.Notification()
 
-	createIn := NewCreateRuleInput("NotificationGetRule1", s.channel.ID)
+	createIn := NewCreateRuleInput(s.Env.Namespace(), "NotificationGetRule1", s.channel.ID)
 
 	rule, err := service.CreateRule(ctx, createIn)
 	require.NoError(t, err, "Creating rule must not return error")
@@ -273,7 +296,9 @@ func (s *RuleTestSuite) TestGet(ctx context.Context, t *testing.T) {
 	assert.Equal(t, rule.Namespace, rule2.Namespace, "Rule namespace must be equal")
 	assert.Equal(t, rule.ID, rule2.ID, "Rule ID must be equal")
 	assert.Equal(t, rule.Disabled, rule2.Disabled, "Rule must not be disabled")
-	assert.Equal(t, rule.Type, rule.Type, "Rule type must be the same")
-	assert.Equal(t, rule.Channels, rule.Channels, "Rule channels must be the same")
-	assert.EqualValues(t, rule.Config, rule.Config, "Rule config must be the same")
+	assert.Equal(t, rule.Type, rule2.Type, "Rule type must be the same")
+	assert.Equal(t, rule.Channels, rule2.Channels, "Rule channels must be the same")
+	assert.EqualValues(t, rule.Config, rule2.Config, "Rule config must be the same")
+	assert.Equalf(t, rule.Annotations, rule2.Annotations, "Annotations must be the same")
+	assert.Equalf(t, rule.Metadata, rule2.Metadata, "Metadata must be the same")
 }

@@ -55,8 +55,28 @@ model Error {
   /**
    * Additional properties specific to the problem type may be present.
    */
+  @example(#{
+    validationErrors: #[
+      #{ code: "validation_error", message: "Validation error" }
+    ],
+    otherAttribute: "otherValue",
+  })
+  extensions?: Record<unknown>;
+
+  /**
+   * Additional properties specific to the problem type may be present.
+   */
   ...Record<unknown>;
 }
+
+alias CommonErrorsWithValidation =
+  | ValidationErrorResponse
+  | UnauthorizedError
+  | ForbiddenError
+  | InternalServerErrorError
+  | ServiceUnavailableError
+  | PreconditionFailedError
+  | Error;
 
 alias CommonErrors =
   | BadRequestError
@@ -124,6 +144,35 @@ model ValidationError {
    */
   @visibility(Lifecycle.Read)
   attributes?: Annotations;
+}
+
+/**
+ * Generic ErrorExtension as part of HTTPProblem.Extensions.[StatusCode]
+ */
+@friendlyName("ErrorExtension")
+model ErrorExtension {
+  /**
+   * The path to the field.
+   */
+  @visibility(Lifecycle.Read)
+  @example("addons/pro/ratecards/token/featureKey")
+  field: string;
+
+  /**
+   * The machine readable description of the error.
+   */
+  @visibility(Lifecycle.Read)
+  @example("invalid_feature_key")
+  code: string;
+
+  /**
+   * The human readable description of the error.
+   */
+  @visibility(Lifecycle.Read)
+  @example("not found feature by key")
+  message: string;
+
+  ...Record<unknown>;
 }
 
 /**

@@ -13,7 +13,7 @@ import (
 	"github.com/openmeterio/openmeter/app/config"
 	"github.com/openmeterio/openmeter/openmeter/billing"
 	billingworker "github.com/openmeterio/openmeter/openmeter/billing/worker"
-	billingworkersubscription "github.com/openmeterio/openmeter/openmeter/billing/worker/subscription"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync"
 	watermillkafka "github.com/openmeterio/openmeter/openmeter/watermill/driver/kafka"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
 	"github.com/openmeterio/openmeter/openmeter/watermill/router"
@@ -29,6 +29,7 @@ var BillingWorker = wire.NewSet(
 	BillingWorkerSubscriber,
 
 	Lockr,
+	FFX,
 
 	Subscription,
 	ProductCatalog,
@@ -38,7 +39,8 @@ var BillingWorker = wire.NewSet(
 
 	NewBillingWorkerOptions,
 	NewBillingWorker,
-	NewBillingSubscriptionHandler,
+	NewBillingSubscriptionSyncAdapter,
+	NewBillingSubscriptionSyncService,
 	BillingWorkerGroup,
 )
 
@@ -76,19 +78,23 @@ func NewBillingWorkerOptions(
 	billingService billing.Service,
 	billingAdapter billing.Adapter,
 	subscriptionServices SubscriptionServiceWithWorkflow,
-	subsSyncHandler *billingworkersubscription.Handler,
+	subscriptionSyncService subscriptionsync.Service,
+	billingFsConfig config.BillingFeatureSwitchesConfiguration,
 	logger *slog.Logger,
 ) billingworker.WorkerOptions {
 	return billingworker.WorkerOptions{
 		SystemEventsTopic: eventConfig.SystemEvents.Topic,
 
-		Router:                         routerOptions,
-		EventBus:                       eventBus,
-		BillingService:                 billingService,
-		BillingAdapter:                 billingAdapter,
-		SubscriptionService:            subscriptionServices.Service,
-		BillingSubscriptionSyncHandler: subsSyncHandler,
-		Logger:                         logger,
+		Router:                  routerOptions,
+		EventBus:                eventBus,
+		BillingService:          billingService,
+		BillingAdapter:          billingAdapter,
+		SubscriptionService:     subscriptionServices.Service,
+		BillingSubscriptionSync: subscriptionSyncService,
+		Logger:                  logger,
+
+		// Feature switches
+		LockdownNamespaces: billingFsConfig.NamespaceLockdown,
 	}
 }
 

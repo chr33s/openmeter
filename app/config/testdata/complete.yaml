@@ -48,11 +48,12 @@ ingest:
       - broker
       - topic
       - consumer
-    cacheSize: 200
-    cacheTTL: 15m
-    protectedTopics:
-      - "protected-topic-1"
-      - "protected-topic-2"
+    topicProvisioner:
+      cacheSize: 200
+      cacheTTL: 15m
+      protectedTopics:
+        - "protected-topic-1"
+        - "protected-topic-2"
 
 aggregation:
   clickhouse:
@@ -61,6 +62,9 @@ aggregation:
     username: default
     password: default
     database: openmeter
+
+    retry:
+      enabled: true
 
 sink:
   groupId: openmeter-sink-worker
@@ -138,10 +142,23 @@ meters:
       method: $.method
       path: $.path
 
+reservedEventTypes:
+  - ^reserved\..*$
+  - ^_\..*$
+  - ^openmeter\..*$
+
 notification:
   enabled: true
+  reconcileInterval: 1m
+  sendingTimeout: 1h
+  pendingTimeout: 2h
 
 svix:
   apiKey: test-svix-token
   serverURL: http://127.0.0.1:8071
   debug: true
+
+productCatalog:
+  subscription:
+    multiSubscriptionNamespaces:
+      - "multi-subscription"

@@ -15,7 +15,10 @@ import (
 	billingsubscription "github.com/openmeterio/openmeter/openmeter/billing/validators/subscription"
 	billingworkerautoadvance "github.com/openmeterio/openmeter/openmeter/billing/worker/advance"
 	billingworkercollect "github.com/openmeterio/openmeter/openmeter/billing/worker/collect"
-	billingworkersubscription "github.com/openmeterio/openmeter/openmeter/billing/worker/subscription"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync"
+	subscriptionsyncadapter "github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/adapter"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/reconciler"
+	subscriptionsyncservice "github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/service"
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
 	"github.com/openmeterio/openmeter/openmeter/meter"
@@ -51,6 +54,7 @@ func BillingService(
 	eventPublisher eventbus.Publisher,
 	billingConfig config.BillingConfiguration,
 	subscriptionServices SubscriptionServiceWithWorkflow,
+	db *entdb.Client,
 	fsConfig config.BillingFeatureSwitchesConfiguration,
 	tracer trace.Tracer,
 ) (billing.Service, error) {
@@ -71,12 +75,17 @@ func BillingService(
 		return nil, err
 	}
 
-	handler, err := NewBillingSubscriptionHandler(logger, subscriptionServices, service, billingAdapter, tracer)
+	// To prevent circular dependencies, we create the validator here
+	subscriptionSyncAdapter, err := NewBillingSubscriptionSyncAdapter(db)
+	if err != nil {
+		return nil, err
+	}
+	subscriptionSyncService, err := NewBillingSubscriptionSyncService(logger, subscriptionServices, service, subscriptionSyncAdapter, tracer)
 	if err != nil {
 		return nil, err
 	}
 
-	validator, err := billingcustomer.NewValidator(service, handler, subscriptionServices.Service)
+	validator, err := billingcustomer.NewValidator(service, subscriptionSyncService, subscriptionServices.Service)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +97,7 @@ func BillingService(
 		return nil, err
 	}
 
-	if err = subscriptionServices.Service.RegisterValidator(subscriptionValidator); err != nil {
+	if err = subscriptionServices.Service.RegisterHook(subscriptionValidator); err != nil {
 		return nil, err
 	}
 
@@ -110,8 +119,8 @@ func NewBillingCollector(logger *slog.Logger, service billing.Service, fs config
 	})
 }
 
-func NewBillingSubscriptionReconciler(logger *slog.Logger, subsServices SubscriptionServiceWithWorkflow, subscriptionSync *billingworkersubscription.Handler, customerService customer.Service) (*billingworkersubscription.Reconciler, error) {
-	return billingworkersubscription.NewReconciler(billingworkersubscription.ReconcilerConfig{
+func NewBillingSubscriptionReconciler(logger *slog.Logger, subsServices SubscriptionServiceWithWorkflow, subscriptionSync subscriptionsync.Service, customerService customer.Service) (*reconciler.Reconciler, error) {
+	return reconciler.NewReconciler(reconciler.ReconcilerConfig{
 		SubscriptionService: subsServices.Service,
 		SubscriptionSync:    subscriptionSync,
 		Logger:              logger,
@@ -119,12 +128,18 @@ func NewBillingSubscriptionReconciler(logger *slog.Logger, subsServices Subscrip
 	})
 }
 
-func NewBillingSubscriptionHandler(logger *slog.Logger, subsServices SubscriptionServiceWithWorkflow, billingService billing.Service, billingAdapter billing.Adapter, tracer trace.Tracer) (*billingworkersubscription.Handler, error) {
-	return billingworkersubscription.New(billingworkersubscription.Config{
-		SubscriptionService: subsServices.Service,
-		BillingService:      billingService,
-		TxCreator:           billingAdapter,
-		Logger:              logger,
-		Tracer:              tracer,
+func NewBillingSubscriptionSyncAdapter(db *entdb.Client) (subscriptionsync.Adapter, error) {
+	return subscriptionsyncadapter.New(subscriptionsyncadapter.Config{
+		Client: db,
+	})
+}
+
+func NewBillingSubscriptionSyncService(logger *slog.Logger, subsServices SubscriptionServiceWithWorkflow, billingService billing.Service, subscriptionSyncAdapter subscriptionsync.Adapter, tracer trace.Tracer) (subscriptionsync.Service, error) {
+	return subscriptionsyncservice.New(subscriptionsyncservice.Config{
+		SubscriptionService:     subsServices.Service,
+		BillingService:          billingService,
+		SubscriptionSyncAdapter: subscriptionSyncAdapter,
+		Logger:                  logger,
+		Tracer:                  tracer,
 	})
 }

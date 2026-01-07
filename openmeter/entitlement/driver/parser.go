@@ -1,6 +1,7 @@
 package entitlementdriver
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,14 @@ func (parser) ToMetered(e *entitlement.Entitlement) (*api.EntitlementMetered, er
 		return nil, err
 	}
 
+	var subjKey string
+	if metered.Customer.UsageAttribution != nil {
+		subjKey, err = metered.Customer.UsageAttribution.GetFirstSubjectKey()
+		if err != nil {
+			subjKey = ""
+		}
+	}
+
 	return &api.EntitlementMetered{
 		ActiveFrom:  metered.ActiveFromTime(),
 		ActiveTo:    metered.ActiveToTime(),
@@ -52,7 +61,7 @@ func (parser) ToMetered(e *entitlement.Entitlement) (*api.EntitlementMetered, er
 		MeasureUsageFrom:       metered.MeasureUsageFrom,
 		Metadata:               convert.MapToPointer(metered.Metadata),
 		Annotations:            lo.EmptyableToPtr(api.Annotations(metered.Annotations)),
-		SubjectKey:             metered.SubjectKey,
+		SubjectKey:             subjKey,
 		Type:                   api.EntitlementMeteredType(metered.EntitlementType),
 		UpdatedAt:              metered.UpdatedAt,
 		UsagePeriod:            *mapUsagePeriod(e.UsagePeriod),
@@ -68,6 +77,14 @@ func (parser) ToStatic(e *entitlement.Entitlement) (*api.EntitlementStatic, erro
 		return nil, err
 	}
 
+	var subjKey string
+	if static.Customer.UsageAttribution != nil {
+		subjKey, err = static.Customer.UsageAttribution.GetFirstSubjectKey()
+		if err != nil {
+			subjKey = ""
+		}
+	}
+
 	apiRes := &api.EntitlementStatic{
 		ActiveFrom:         static.ActiveFromTime(),
 		ActiveTo:           static.ActiveToTime(),
@@ -78,12 +95,16 @@ func (parser) ToStatic(e *entitlement.Entitlement) (*api.EntitlementStatic, erro
 		Id:                 static.ID,
 		Metadata:           convert.MapToPointer(static.Metadata),
 		Annotations:        lo.EmptyableToPtr(api.Annotations(static.Annotations)),
-		SubjectKey:         static.SubjectKey,
+		SubjectKey:         subjKey,
 		Type:               api.EntitlementStaticType(static.EntitlementType),
 		UpdatedAt:          static.UpdatedAt,
-		Config:             static.Config,
 		CurrentUsagePeriod: mapPeriod(static.CurrentUsagePeriod),
 		UsagePeriod:        mapUsagePeriod(e.UsagePeriod),
+	}
+
+	apiRes.Config, err = json.Marshal(static.Config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal static entitlement config: %w", err)
 	}
 
 	return apiRes, nil
@@ -93,6 +114,14 @@ func (parser) ToBoolean(e *entitlement.Entitlement) (*api.EntitlementBoolean, er
 	boolean, err := booleanentitlement.ParseFromGenericEntitlement(e)
 	if err != nil {
 		return nil, err
+	}
+
+	var subjKey string
+	if boolean.Customer.UsageAttribution != nil {
+		subjKey, err = boolean.Customer.UsageAttribution.GetFirstSubjectKey()
+		if err != nil {
+			subjKey = ""
+		}
 	}
 
 	apiRes := &api.EntitlementBoolean{
@@ -105,7 +134,7 @@ func (parser) ToBoolean(e *entitlement.Entitlement) (*api.EntitlementBoolean, er
 		Id:                 boolean.ID,
 		Metadata:           convert.MapToPointer(boolean.Metadata),
 		Annotations:        lo.EmptyableToPtr(api.Annotations(boolean.Annotations)),
-		SubjectKey:         boolean.SubjectKey,
+		SubjectKey:         subjKey,
 		Type:               api.EntitlementBooleanType(boolean.EntitlementType),
 		UpdatedAt:          boolean.UpdatedAt,
 		CurrentUsagePeriod: mapPeriod(boolean.CurrentUsagePeriod),
@@ -157,15 +186,16 @@ func MapEntitlementValueToAPI(entitlementValue entitlement.EntitlementValue) (ap
 	switch ent := entitlementValue.(type) {
 	case *meteredentitlement.MeteredEntitlementValue:
 		return api.EntitlementValue{
-			HasAccess: ent.HasAccess(),
-			Balance:   &ent.Balance,
-			Usage:     &ent.UsageInPeriod,
-			Overage:   &ent.Overage,
+			HasAccess:                 ent.HasAccess(),
+			Balance:                   &ent.Balance,
+			Usage:                     &ent.UsageInPeriod,
+			Overage:                   &ent.Overage,
+			TotalAvailableGrantAmount: &ent.TotalAvailableGrantAmount,
 		}, nil
 	case *staticentitlement.StaticEntitlementValue:
 		var config *string
 		if len(ent.Config) > 0 {
-			config = convert.ToPointer(string(ent.Config))
+			config = lo.ToPtr(ent.Config)
 		}
 
 		return api.EntitlementValue{
@@ -285,8 +315,19 @@ func ParseAPICreateInput(inp *api.EntitlementCreateInputs, ns string, usageAttri
 			FeatureKey:       v.FeatureKey,
 			UsageAttribution: usageAttribution,
 			EntitlementType:  entitlement.EntitlementTypeStatic,
-			Config:           []byte(v.Config),
 		}
+
+		if len(v.Config) > 0 {
+			var config string
+
+			err = json.Unmarshal(v.Config, &config)
+			if err != nil {
+				return request, fmt.Errorf("failed to unmarshal static entitlement config: %w", err)
+			}
+
+			request.Config = lo.ToPtr(config)
+		}
+
 		if v.UsagePeriod != nil {
 			iv, err := MapAPIPeriodIntervalToRecurrence(v.UsagePeriod.Interval)
 			if err != nil {

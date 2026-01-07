@@ -4,6 +4,9 @@ import (
 	"context"
 	"time"
 
+	"github.com/alpacahq/alpacadecimal"
+	"github.com/samber/lo"
+
 	"github.com/openmeterio/openmeter/openmeter/credit/balance"
 	"github.com/openmeterio/openmeter/openmeter/credit/grant"
 	"github.com/openmeterio/openmeter/openmeter/meter"
@@ -26,11 +29,63 @@ type RunParams struct {
 	Resets timeutil.SimpleTimeline
 }
 
+func (p RunParams) Clone() RunParams {
+	grants := make([]grant.Grant, len(p.Grants))
+	copy(grants, p.Grants)
+
+	resets := timeutil.NewSimpleTimeline(p.Resets.GetTimes())
+
+	res := RunParams{
+		Meter:            p.Meter,
+		Grants:           grants,
+		Until:            p.Until,
+		StartingSnapshot: p.StartingSnapshot,
+		ResetBehavior:    p.ResetBehavior,
+		Resets:           resets,
+	}
+
+	return res
+}
+
 type RunResult struct {
 	// Snapshot of the balances at the END OF THE PERIOD.
 	Snapshot balance.Snapshot
 	// History of the grant burn down.
 	History GrantBurnDownHistory
+	// RunParams used to produce the result.
+	RunParams RunParams
+}
+
+// TotalAvailableGrantAmount is the total amount of grants either currently active + the used amount of currently inactive grants.
+func (r RunResult) TotalAvailableGrantAmount() float64 {
+	// First, let's calculate the total amount of grants active at the end of the period.
+	activeAmount := lo.Reduce(r.RunParams.Grants, func(agg alpacadecimal.Decimal, grant grant.Grant, _ int) alpacadecimal.Decimal {
+		if !grant.ActiveAt(r.RunParams.Until) {
+			return agg
+		}
+
+		return agg.Add(alpacadecimal.NewFromFloat(grant.Amount))
+	}, alpacadecimal.NewFromFloat(0))
+
+	// Second, let's calculate the used-up amount of since inactive grants.
+	inactiveGrants := lo.Filter(r.RunParams.Grants, func(grant grant.Grant, _ int) bool {
+		return !grant.ActiveAt(r.RunParams.Until)
+	})
+
+	usedInactive := alpacadecimal.NewFromFloat(0)
+	if len(inactiveGrants) > 0 {
+		for _, seg := range r.History.Segments() {
+			for _, usage := range seg.GrantUsages {
+				if lo.SomeBy(inactiveGrants, func(grant grant.Grant) bool {
+					return grant.ID == usage.GrantID
+				}) {
+					usedInactive = usedInactive.Add(alpacadecimal.NewFromFloat(usage.Usage))
+				}
+			}
+		}
+	}
+
+	return activeAmount.Add(usedInactive).InexactFloat64()
 }
 
 type Engine interface {

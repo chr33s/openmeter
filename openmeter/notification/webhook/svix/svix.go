@@ -2,9 +2,6 @@ package svix
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +9,7 @@ import (
 	"time"
 
 	svix "github.com/svix/svix-webhooks/go"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/openmeterio/openmeter/openmeter/notification/webhook"
 	"github.com/openmeterio/openmeter/openmeter/notification/webhook/svix/internal"
@@ -57,42 +55,36 @@ func (c SvixConfig) IsEnabled() bool {
 }
 
 type Config struct {
-	SvixConfig
-
 	RegisterEventTypes      []webhook.EventType
 	RegistrationTimeout     time.Duration
 	SkipRegistrationOnError bool
 
-	Logger *slog.Logger
+	SvixAPIClient *svix.Svix
+	Logger        *slog.Logger
+	Tracer        trace.Tracer
 }
 
 func (c Config) Validate() error {
 	var errs []error
 
-	if err := c.SvixConfig.Validate(); err != nil {
-		errs = append(errs, err)
+	if c.SvixAPIClient == nil {
+		errs = append(errs, errors.New("svix client is required"))
 	}
 
 	if c.Logger == nil {
 		errs = append(errs, errors.New("logger is required"))
 	}
 
+	if c.Tracer == nil {
+		errs = append(errs, errors.New("tracer is required"))
+	}
+
 	return errors.Join(errs...)
 }
 
 func New(config Config) (webhook.Handler, error) {
-	var errs []error
-
-	if config.Logger == nil {
-		errs = append(errs, errors.New("logger is required"))
-	}
-
-	if err := config.SvixConfig.Validate(); err != nil {
-		errs = append(errs, err)
-	}
-
-	if err := errors.Join(errs...); err != nil {
-		return nil, err
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid svix webhook handler config: %w", err)
 	}
 
 	if config.RegisterEventTypes == nil {
@@ -131,50 +123,18 @@ var _ webhook.Handler = (*svixHandler)(nil)
 
 type svixHandler struct {
 	client *svix.Svix
+	logger *slog.Logger
+	tracer trace.Tracer
 }
 
 func NewHandler(config Config) (webhook.Handler, error) {
-	opts := svix.SvixOptions{
-		Debug: config.Debug,
-	}
-
-	var err error
-
-	if config.ServerURL != "" {
-		opts.ServerUrl, err = url.Parse(config.ServerURL)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse server URL: %w", err)
-		}
-	}
-
-	client, err := svix.New(config.APIKey, &opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create svix client: %w", err)
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid svix webhook handler config: %w", err)
 	}
 
 	return &svixHandler{
-		client: client,
+		client: config.SvixAPIClient,
+		logger: config.Logger,
+		tracer: config.Tracer,
 	}, nil
-}
-
-type idempotencyKeyTypes interface {
-	svix.ApplicationIn | svix.EndpointIn | svix.EndpointSecretRotateIn | svix.MessageIn
-}
-
-func toIdempotencyKey[T idempotencyKeyTypes](v T, t time.Time) (string, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "", err
-	}
-
-	if t.IsZero() {
-		t = time.Now().UTC()
-	}
-	t = t.UTC()
-
-	h := sha256.New()
-	h.Write(b)
-	h.Write([]byte(t.String()))
-
-	return hex.EncodeToString(h.Sum(nil)), nil
 }

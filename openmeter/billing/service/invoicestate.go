@@ -52,7 +52,15 @@ func allocateStateMachine() *InvoiceStateMachine {
 				return fmt.Errorf("invalid state type: %v", state)
 			}
 
+			previousStatus := out.Invoice.Status
 			out.Invoice.Status = invState
+
+			if invState == billing.InvoiceStatusPaymentProcessingPending &&
+				previousStatus != billing.InvoiceStatusPaymentProcessingPending &&
+				out.Invoice.PaymentProcessingEnteredAt == nil {
+				now := clock.Now().UTC()
+				out.Invoice.PaymentProcessingEnteredAt = &now
+			}
 
 			sd, err := out.StatusDetails(ctx)
 			if err != nil {
@@ -366,6 +374,7 @@ func (m *InvoiceStateMachine) calculateAvailableActionDetails(ctx context.Contex
 
 	originalState := m.Invoice.Status
 	originalValidationErrors := m.Invoice.ValidationIssues
+	originalPaymentProcessingEnteredAt := m.Invoice.PaymentProcessingEnteredAt
 	m.Invoice.ValidationIssues = nil
 
 	if err := m.StateMachine.FireCtx(ctx, baseTrigger); err != nil {
@@ -389,6 +398,7 @@ func (m *InvoiceStateMachine) calculateAvailableActionDetails(ctx context.Contex
 
 	resultingState := m.Invoice.Status
 	m.Invoice.Status = originalState
+	m.Invoice.PaymentProcessingEnteredAt = originalPaymentProcessingEnteredAt
 	m.Invoice.ValidationIssues = originalValidationErrors
 
 	return &billing.InvoiceAvailableActionDetails{
@@ -713,7 +723,7 @@ func (m *InvoiceStateMachine) isReadyForCollection() bool {
 
 func (m *InvoiceStateMachine) snapshotQuantityAsNeeded(ctx context.Context) error {
 	// Let's skip the snapshot if we already have the snapshot and it happened after the collection date
-	if m.Invoice.QuantitySnapshotedAt != nil && !m.Invoice.QuantitySnapshotedAt.Before(lo.FromPtrOr(m.Invoice.CollectionAt, m.Invoice.CreatedAt)) {
+	if m.Invoice.QuantitySnapshotedAt != nil && !m.Invoice.QuantitySnapshotedAt.Before(m.Invoice.DefaultCollectionAtForStandardInvoice()) {
 		m.Logger.InfoContext(ctx, "skipping snapshot quantity as it already exists and was taken after the collection date",
 			"invoice", m.Invoice.ID,
 			"quantity_snapshoted_at", m.Invoice.QuantitySnapshotedAt,

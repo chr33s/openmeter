@@ -18,10 +18,12 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/ent/db/plan"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/subscription"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionaddon"
+	"github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionbillingsyncstate"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/subscriptionphase"
 	"github.com/openmeterio/openmeter/openmeter/productcatalog"
 	"github.com/openmeterio/openmeter/pkg/currencyx"
 	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
 // SubscriptionCreate is the builder for creating a Subscription entity.
@@ -35,6 +37,12 @@ type SubscriptionCreate struct {
 // SetNamespace sets the "namespace" field.
 func (_c *SubscriptionCreate) SetNamespace(v string) *SubscriptionCreate {
 	_c.mutation.SetNamespace(v)
+	return _c
+}
+
+// SetAnnotations sets the "annotations" field.
+func (_c *SubscriptionCreate) SetAnnotations(v models.Annotations) *SubscriptionCreate {
+	_c.mutation.SetAnnotations(v)
 	return _c
 }
 
@@ -270,6 +278,25 @@ func (_c *SubscriptionCreate) AddAddons(v ...*SubscriptionAddon) *SubscriptionCr
 	return _c.AddAddonIDs(ids...)
 }
 
+// SetBillingSyncStateID sets the "billing_sync_state" edge to the SubscriptionBillingSyncState entity by ID.
+func (_c *SubscriptionCreate) SetBillingSyncStateID(id string) *SubscriptionCreate {
+	_c.mutation.SetBillingSyncStateID(id)
+	return _c
+}
+
+// SetNillableBillingSyncStateID sets the "billing_sync_state" edge to the SubscriptionBillingSyncState entity by ID if the given value is not nil.
+func (_c *SubscriptionCreate) SetNillableBillingSyncStateID(id *string) *SubscriptionCreate {
+	if id != nil {
+		_c = _c.SetBillingSyncStateID(*id)
+	}
+	return _c
+}
+
+// SetBillingSyncState sets the "billing_sync_state" edge to the SubscriptionBillingSyncState entity.
+func (_c *SubscriptionCreate) SetBillingSyncState(v *SubscriptionBillingSyncState) *SubscriptionCreate {
+	return _c.SetBillingSyncStateID(v.ID)
+}
+
 // Mutation returns the SubscriptionMutation object of the builder.
 func (_c *SubscriptionCreate) Mutation() *SubscriptionMutation {
 	return _c.mutation
@@ -430,6 +457,10 @@ func (_c *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec,
 		_spec.SetField(subscription.FieldNamespace, field.TypeString, value)
 		_node.Namespace = value
 	}
+	if value, ok := _c.mutation.Annotations(); ok {
+		_spec.SetField(subscription.FieldAnnotations, field.TypeJSON, value)
+		_node.Annotations = value
+	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(subscription.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -580,6 +611,22 @@ func (_c *SubscriptionCreate) createSpec() (*Subscription, *sqlgraph.CreateSpec,
 		}
 		_spec.Edges = append(_spec.Edges, edge)
 	}
+	if nodes := _c.mutation.BillingSyncStateIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   subscription.BillingSyncStateTable,
+			Columns: []string{subscription.BillingSyncStateColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(subscriptionbillingsyncstate.FieldID, field.TypeString),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
 	return _node, _spec, nil
 }
 
@@ -631,6 +678,24 @@ type (
 		*sql.UpdateSet
 	}
 )
+
+// SetAnnotations sets the "annotations" field.
+func (u *SubscriptionUpsert) SetAnnotations(v models.Annotations) *SubscriptionUpsert {
+	u.Set(subscription.FieldAnnotations, v)
+	return u
+}
+
+// UpdateAnnotations sets the "annotations" field to the value that was provided on create.
+func (u *SubscriptionUpsert) UpdateAnnotations() *SubscriptionUpsert {
+	u.SetExcluded(subscription.FieldAnnotations)
+	return u
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (u *SubscriptionUpsert) ClearAnnotations() *SubscriptionUpsert {
+	u.SetNull(subscription.FieldAnnotations)
+	return u
+}
 
 // SetUpdatedAt sets the "updated_at" field.
 func (u *SubscriptionUpsert) SetUpdatedAt(v time.Time) *SubscriptionUpsert {
@@ -843,6 +908,27 @@ func (u *SubscriptionUpsertOne) Update(set func(*SubscriptionUpsert)) *Subscript
 		set(&SubscriptionUpsert{UpdateSet: update})
 	}))
 	return u
+}
+
+// SetAnnotations sets the "annotations" field.
+func (u *SubscriptionUpsertOne) SetAnnotations(v models.Annotations) *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetAnnotations(v)
+	})
+}
+
+// UpdateAnnotations sets the "annotations" field to the value that was provided on create.
+func (u *SubscriptionUpsertOne) UpdateAnnotations() *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateAnnotations()
+	})
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (u *SubscriptionUpsertOne) ClearAnnotations() *SubscriptionUpsertOne {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.ClearAnnotations()
+	})
 }
 
 // SetUpdatedAt sets the "updated_at" field.
@@ -1251,6 +1337,27 @@ func (u *SubscriptionUpsertBulk) Update(set func(*SubscriptionUpsert)) *Subscrip
 		set(&SubscriptionUpsert{UpdateSet: update})
 	}))
 	return u
+}
+
+// SetAnnotations sets the "annotations" field.
+func (u *SubscriptionUpsertBulk) SetAnnotations(v models.Annotations) *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.SetAnnotations(v)
+	})
+}
+
+// UpdateAnnotations sets the "annotations" field to the value that was provided on create.
+func (u *SubscriptionUpsertBulk) UpdateAnnotations() *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.UpdateAnnotations()
+	})
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (u *SubscriptionUpsertBulk) ClearAnnotations() *SubscriptionUpsertBulk {
+	return u.Update(func(s *SubscriptionUpsert) {
+		s.ClearAnnotations()
+	})
 }
 
 // SetUpdatedAt sets the "updated_at" field.

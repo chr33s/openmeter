@@ -1,6 +1,7 @@
 package productcatalog
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -280,7 +281,7 @@ func ValidateAddonHasSingleBillingCadence() models.ValidatorFunc[Addon] {
 		}
 
 		return models.ErrorWithFieldPrefix(
-			models.NewFieldSelectors(models.NewFieldSelector("ratecards").WithExpression(models.WildCard)),
+			models.NewFieldSelectorGroup(models.NewFieldSelector("ratecards").WithExpression(models.WildCard)),
 			ErrRateCardMultipleBillingCadence,
 		)
 	}
@@ -295,7 +296,7 @@ func ValidateAddonHasCompatiblePrices() models.ValidatorFunc[Addon] {
 			for _, rc := range a.RateCards {
 				if price := rc.AsMeta().Price; price != nil && price.Type() != FlatPriceType {
 					return models.ErrorWithFieldPrefix(
-						models.NewFieldSelectors(models.NewFieldSelector("ratecards").
+						models.NewFieldSelectorGroup(models.NewFieldSelector("ratecards").
 							WithExpression(models.NewFieldAttrValue("key", rc.Key()))),
 						ErrAddonInvalidPriceForMultiInstance,
 					)
@@ -315,5 +316,11 @@ func ValidateAddonHasCompatiblePrices() models.ValidatorFunc[Addon] {
 func AddonRateCardMatcherForAGivenPlanRateCard(planRateCard RateCard) func(addonRateCard RateCard) bool {
 	return func(addonRateCard RateCard) bool {
 		return addonRateCard.Key() == planRateCard.Key()
+	}
+}
+
+func ValidateAddonWithFeatures(ctx context.Context, resolver NamespacedFeatureResolver) models.ValidatorFunc[Addon] {
+	return func(a Addon) error {
+		return ValidateRateCardsWithFeatures(ctx, resolver)(a.RateCards)
 	}
 }

@@ -19,9 +19,7 @@ func FromChannel(c notification.Channel) (api.NotificationChannel, error) {
 	case notification.ChannelTypeWebhook:
 		channel = FromChannelWebhook(c)
 	default:
-		return channel, notification.ValidationError{
-			Err: fmt.Errorf("invalid channel type: %s", c.Type),
-		}
+		return channel, models.NewGenericValidationError(fmt.Errorf("invalid channel type: %s", c.Type))
 	}
 
 	return channel, nil
@@ -45,7 +43,25 @@ func FromChannelWebhook(c notification.Channel) api.NotificationChannelWebhook {
 		UpdatedAt:     c.UpdatedAt,
 		Url:           c.Config.WebHook.URL,
 		DeletedAt:     c.DeletedAt,
+		Annotations:   lo.EmptyableToPtr(FromAnnotations(c.Annotations)),
+		Metadata:      lo.EmptyableToPtr(FromMetadata(c.Metadata)),
 	}
+}
+
+func FromAnnotations(a models.Annotations) api.Annotations {
+	if a == nil {
+		return nil
+	}
+
+	return api.Annotations(a)
+}
+
+func FromMetadata(m models.Metadata) api.Metadata {
+	if m == nil {
+		return nil
+	}
+
+	return api.Metadata(m)
 }
 
 func AsChannelWebhookCreateRequest(r api.NotificationChannelWebhookCreateRequest, namespace string) notification.CreateChannelInput {
@@ -66,15 +82,24 @@ func AsChannelWebhookCreateRequest(r api.NotificationChannelWebhookCreateRequest
 				SigningSecret: lo.FromPtr(r.SigningSecret),
 			},
 		},
+		Metadata: lo.FromPtr(r.Metadata),
 	}
 }
 
-func AsChannelWebhookUpdateRequest(r api.NotificationChannelWebhookCreateRequest, namespace, channelId string) notification.UpdateChannelInput {
+func AsMetadata(m *api.Metadata) models.Metadata {
+	if m == nil {
+		return nil
+	}
+
+	return *m
+}
+
+func AsChannelWebhookUpdateRequest(r api.NotificationChannelWebhookCreateRequest, namespace, channelID string) notification.UpdateChannelInput {
 	return notification.UpdateChannelInput{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: namespace,
+			ID:        channelID,
 		},
-		ID:       channelId,
 		Name:     r.Name,
 		Type:     notification.ChannelType(r.Type),
 		Disabled: lo.FromPtrOr(r.Disabled, notification.DefaultDisabled),
@@ -88,6 +113,7 @@ func AsChannelWebhookUpdateRequest(r api.NotificationChannelWebhookCreateRequest
 				SigningSecret: lo.FromPtr(r.SigningSecret),
 			},
 		},
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
@@ -109,13 +135,15 @@ func AsRuleBalanceThresholdCreateRequest(r api.NotificationRuleBalanceThresholdC
 			},
 		},
 		Channels: r.Channels,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
 func AsRuleBalanceThresholdUpdateRequest(r api.NotificationRuleBalanceThresholdCreateRequest, namespace, ruleID string) notification.UpdateRuleInput {
 	return notification.UpdateRuleInput{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: namespace,
+			ID:        ruleID,
 		},
 		Name:     r.Name,
 		Type:     notification.EventType(r.Type),
@@ -130,7 +158,7 @@ func AsRuleBalanceThresholdUpdateRequest(r api.NotificationRuleBalanceThresholdC
 			},
 		},
 		Channels: r.Channels,
-		ID:       ruleID,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
@@ -151,13 +179,15 @@ func AsRuleEntitlementResetCreateRequest(r api.NotificationRuleEntitlementResetC
 			},
 		},
 		Channels: r.Channels,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
 func AsRuleEntitlementResetUpdateRequest(r api.NotificationRuleEntitlementResetCreateRequest, namespace, ruleID string) notification.UpdateRuleInput {
 	return notification.UpdateRuleInput{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: namespace,
+			ID:        ruleID,
 		},
 		Name:     r.Name,
 		Type:     notification.EventType(r.Type),
@@ -171,7 +201,7 @@ func AsRuleEntitlementResetUpdateRequest(r api.NotificationRuleEntitlementResetC
 			},
 		},
 		Channels: r.Channels,
-		ID:       ruleID,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
@@ -190,13 +220,15 @@ func AsRuleInvoiceCreatedCreateRequest(r api.NotificationRuleInvoiceCreatedCreat
 			Invoice: &notification.InvoiceRuleConfig{},
 		},
 		Channels: r.Channels,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
-func AsRuleInvoiceCreatedUpdateRequest(r api.NotificationRuleInvoiceCreatedCreateRequest, namespace, id string) notification.UpdateRuleInput {
+func AsRuleInvoiceCreatedUpdateRequest(r api.NotificationRuleInvoiceCreatedCreateRequest, namespace, ruleID string) notification.UpdateRuleInput {
 	return notification.UpdateRuleInput{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: namespace,
+			ID:        ruleID,
 		},
 		Type:     notification.EventType(r.Type),
 		Name:     r.Name,
@@ -208,7 +240,7 @@ func AsRuleInvoiceCreatedUpdateRequest(r api.NotificationRuleInvoiceCreatedCreat
 			Invoice: &notification.InvoiceRuleConfig{},
 		},
 		Channels: r.Channels,
-		ID:       id,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
@@ -227,13 +259,15 @@ func AsRuleInvoiceUpdatedCreateRequest(r api.NotificationRuleInvoiceUpdatedCreat
 			Invoice: &notification.InvoiceRuleConfig{},
 		},
 		Channels: r.Channels,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
-func AsRuleInvoiceUpdatedUpdateRequest(r api.NotificationRuleInvoiceUpdatedCreateRequest, namespace, id string) notification.UpdateRuleInput {
+func AsRuleInvoiceUpdatedUpdateRequest(r api.NotificationRuleInvoiceUpdatedCreateRequest, namespace, ruleID string) notification.UpdateRuleInput {
 	return notification.UpdateRuleInput{
-		NamespacedModel: models.NamespacedModel{
+		NamespacedID: models.NamespacedID{
 			Namespace: namespace,
+			ID:        ruleID,
 		},
 		Type:     notification.EventType(r.Type),
 		Name:     r.Name,
@@ -245,7 +279,7 @@ func AsRuleInvoiceUpdatedUpdateRequest(r api.NotificationRuleInvoiceUpdatedCreat
 			Invoice: &notification.InvoiceRuleConfig{},
 		},
 		Channels: r.Channels,
-		ID:       id,
+		Metadata: AsMetadata(r.Metadata),
 	}
 }
 
@@ -277,9 +311,7 @@ func FromRule(r notification.Rule) (api.NotificationRule, error) {
 			return rule, fmt.Errorf("failed to cast notification rule with type: %s: %w", r.Type, err)
 		}
 	default:
-		return rule, notification.ValidationError{
-			Err: fmt.Errorf("invalid rule type: %s", r.Type),
-		}
+		return rule, models.NewGenericValidationError(fmt.Errorf("invalid rule type: %s", r.Type))
 	}
 
 	return rule, nil
@@ -318,6 +350,9 @@ func FromRuleBalanceThreshold(r notification.Rule) api.NotificationRuleBalanceTh
 		Type:       api.NotificationRuleBalanceThresholdTypeEntitlementsBalanceThreshold,
 		UpdatedAt:  r.UpdatedAt,
 		DeletedAt:  r.DeletedAt,
+
+		Annotations: lo.EmptyableToPtr(api.Annotations(r.Annotations)),
+		Metadata:    lo.EmptyableToPtr(api.Metadata(r.Metadata)),
 	}
 }
 
@@ -353,6 +388,9 @@ func FromRuleEntitlementReset(r notification.Rule) api.NotificationRuleEntitleme
 		Type:      api.NotificationRuleEntitlementResetTypeEntitlementsReset,
 		UpdatedAt: r.UpdatedAt,
 		DeletedAt: r.DeletedAt,
+
+		Annotations: lo.EmptyableToPtr(api.Annotations(r.Annotations)),
+		Metadata:    lo.EmptyableToPtr(api.Metadata(r.Metadata)),
 	}
 }
 
@@ -374,6 +412,9 @@ func FromRuleInvoiceCreated(r notification.Rule) api.NotificationRuleInvoiceCrea
 		Type:      api.NotificationRuleInvoiceCreatedTypeInvoiceCreated,
 		UpdatedAt: r.UpdatedAt,
 		DeletedAt: r.DeletedAt,
+
+		Annotations: lo.EmptyableToPtr(api.Annotations(r.Annotations)),
+		Metadata:    lo.EmptyableToPtr(api.Metadata(r.Metadata)),
 	}
 }
 
@@ -395,6 +436,9 @@ func FromRuleInvoiceUpdated(r notification.Rule) api.NotificationRuleInvoiceUpda
 		Type:      api.NotificationRuleInvoiceUpdatedTypeInvoiceUpdated,
 		UpdatedAt: r.UpdatedAt,
 		DeletedAt: r.DeletedAt,
+
+		Annotations: lo.EmptyableToPtr(api.Annotations(r.Annotations)),
+		Metadata:    lo.EmptyableToPtr(api.Metadata(r.Metadata)),
 	}
 }
 
@@ -419,11 +463,15 @@ func FromEvent(e notification.Event) (api.NotificationEvent, error) {
 	deliveryStatuses := make([]api.NotificationEventDeliveryStatus, 0, len(e.DeliveryStatus))
 	for _, deliveryStatus := range e.DeliveryStatus {
 		status := api.NotificationEventDeliveryStatus{
+			Annotations: lo.EmptyableToPtr(api.Annotations(deliveryStatus.Annotations)),
+			Attempts:    AsEventDeliveryAttempts(deliveryStatus.Attempts),
 			Channel: api.NotificationChannelMeta{
 				Id: deliveryStatus.ChannelID,
 			},
-			State:     api.NotificationEventDeliveryStatusState(deliveryStatus.State),
-			UpdatedAt: deliveryStatus.UpdatedAt,
+			NextAttempt: deliveryStatus.NextAttempt,
+			Reason:      deliveryStatus.Reason,
+			State:       api.NotificationEventDeliveryStatusState(deliveryStatus.State),
+			UpdatedAt:   deliveryStatus.UpdatedAt,
 		}
 		if channel, ok := channelsByID[deliveryStatus.ChannelID]; ok {
 			status.Channel = api.NotificationChannelMeta{
@@ -435,20 +483,12 @@ func FromEvent(e notification.Event) (api.NotificationEvent, error) {
 		deliveryStatuses = append(deliveryStatuses, status)
 	}
 
-	var annotations api.Annotations
-	if len(e.Annotations) > 0 {
-		annotations = make(api.Annotations)
-		for k, v := range e.Annotations {
-			annotations[k] = v
-		}
-	}
-
 	event := api.NotificationEvent{
 		CreatedAt:      e.CreatedAt,
 		DeliveryStatus: deliveryStatuses,
 		Id:             e.ID,
 		Rule:           rule,
-		Annotations:    lo.EmptyableToPtr(annotations),
+		Annotations:    lo.EmptyableToPtr(api.Annotations(e.Annotations)),
 	}
 
 	event.Type, err = FromEventType(e.Type)
@@ -498,12 +538,31 @@ func FromEvent(e notification.Event) (api.NotificationEvent, error) {
 			return event, fmt.Errorf("failed to cast notification event payload: %w", err)
 		}
 	default:
-		return event, notification.ValidationError{
-			Err: fmt.Errorf("invalid event payload type: %s", e.Type),
-		}
+		return event, models.NewGenericValidationError(fmt.Errorf("invalid event payload type: %s", e.Type))
 	}
 
 	return event, nil
+}
+
+func AsEventDeliveryAttempts(attempts []notification.EventDeliveryAttempt) []api.NotificationEventDeliveryAttempt {
+	result := make([]api.NotificationEventDeliveryAttempt, 0, len(attempts))
+
+	notification.SortEventDeliveryAttemptsInDescOrder(attempts)
+
+	for _, attempt := range attempts {
+		result = append(result, api.NotificationEventDeliveryAttempt{
+			Response: api.EventDeliveryAttemptResponse{
+				Body:       attempt.Response.Body,
+				StatusCode: attempt.Response.StatusCode,
+				Url:        attempt.Response.URL,
+				DurationMs: int(attempt.Response.Duration.Milliseconds()),
+			},
+			State:     api.NotificationEventDeliveryStatusState(attempt.State),
+			Timestamp: attempt.Timestamp,
+		})
+	}
+
+	return result
 }
 
 func FromEventType(t notification.EventType) (api.NotificationEventType, error) {

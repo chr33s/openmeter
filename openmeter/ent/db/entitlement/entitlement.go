@@ -39,10 +39,6 @@ const (
 	FieldFeatureKey = "feature_key"
 	// FieldCustomerID holds the string denoting the customer_id field in the database.
 	FieldCustomerID = "customer_id"
-	// FieldSubjectID holds the string denoting the subject_id field in the database.
-	FieldSubjectID = "subject_id"
-	// FieldSubjectKey holds the string denoting the subject_key field in the database.
-	FieldSubjectKey = "subject_key"
 	// FieldMeasureUsageFrom holds the string denoting the measure_usage_from field in the database.
 	FieldMeasureUsageFrom = "measure_usage_from"
 	// FieldIssueAfterReset holds the string denoting the issue_after_reset field in the database.
@@ -77,8 +73,6 @@ const (
 	EdgeFeature = "feature"
 	// EdgeCustomer holds the string denoting the customer edge name in mutations.
 	EdgeCustomer = "customer"
-	// EdgeSubject holds the string denoting the subject edge name in mutations.
-	EdgeSubject = "subject"
 	// Table holds the table name of the entitlement in the database.
 	Table = "entitlements"
 	// UsageResetTable is the table that holds the usage_reset relation/edge.
@@ -112,7 +106,7 @@ const (
 	// FeatureTable is the table that holds the feature relation/edge.
 	FeatureTable = "entitlements"
 	// FeatureInverseTable is the table name for the Feature entity.
-	// It exists in this package in order to avoid circular dependency with the "feature" package.
+	// It exists in this package in order to avoid circular dependency with the "dbfeature" package.
 	FeatureInverseTable = "features"
 	// FeatureColumn is the table column denoting the feature relation/edge.
 	FeatureColumn = "feature_id"
@@ -123,13 +117,6 @@ const (
 	CustomerInverseTable = "customers"
 	// CustomerColumn is the table column denoting the customer relation/edge.
 	CustomerColumn = "customer_id"
-	// SubjectTable is the table that holds the subject relation/edge.
-	SubjectTable = "entitlements"
-	// SubjectInverseTable is the table name for the Subject entity.
-	// It exists in this package in order to avoid circular dependency with the "subject" package.
-	SubjectInverseTable = "subjects"
-	// SubjectColumn is the table column denoting the subject relation/edge.
-	SubjectColumn = "subject_id"
 )
 
 // Columns holds all SQL columns for entitlement fields.
@@ -146,8 +133,6 @@ var Columns = []string{
 	FieldActiveTo,
 	FieldFeatureKey,
 	FieldCustomerID,
-	FieldSubjectID,
-	FieldSubjectKey,
 	FieldMeasureUsageFrom,
 	FieldIssueAfterReset,
 	FieldIssueAfterResetPriority,
@@ -182,8 +167,6 @@ var (
 	UpdateDefaultUpdatedAt func() time.Time
 	// FeatureKeyValidator is a validator for the "feature_key" field. It is called by the builders before save.
 	FeatureKeyValidator func(string) error
-	// SubjectKeyValidator is a validator for the "subject_key" field. It is called by the builders before save.
-	SubjectKeyValidator func(string) error
 	// DefaultID holds the default value on creation for the "id" field.
 	DefaultID func() string
 	// ValueScanner of all Entitlement fields.
@@ -274,16 +257,6 @@ func ByCustomerID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldCustomerID, opts...).ToFunc()
 }
 
-// BySubjectID orders the results by the subject_id field.
-func BySubjectID(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSubjectID, opts...).ToFunc()
-}
-
-// BySubjectKey orders the results by the subject_key field.
-func BySubjectKey(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSubjectKey, opts...).ToFunc()
-}
-
 // ByMeasureUsageFrom orders the results by the measure_usage_from field.
 func ByMeasureUsageFrom(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMeasureUsageFrom, opts...).ToFunc()
@@ -307,6 +280,11 @@ func ByIsSoftLimit(opts ...sql.OrderTermOption) OrderOption {
 // ByPreserveOverageAtReset orders the results by the preserve_overage_at_reset field.
 func ByPreserveOverageAtReset(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPreserveOverageAtReset, opts...).ToFunc()
+}
+
+// ByConfig orders the results by the config field.
+func ByConfig(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldConfig, opts...).ToFunc()
 }
 
 // ByUsagePeriodInterval orders the results by the usage_period_interval field.
@@ -403,13 +381,6 @@ func ByCustomerField(field string, opts ...sql.OrderTermOption) OrderOption {
 		sqlgraph.OrderByNeighborTerms(s, newCustomerStep(), sql.OrderByField(field, opts...))
 	}
 }
-
-// BySubjectField orders the results by subject field.
-func BySubjectField(field string, opts ...sql.OrderTermOption) OrderOption {
-	return func(s *sql.Selector) {
-		sqlgraph.OrderByNeighborTerms(s, newSubjectStep(), sql.OrderByField(field, opts...))
-	}
-}
 func newUsageResetStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
@@ -450,12 +421,5 @@ func newCustomerStep() *sqlgraph.Step {
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(CustomerInverseTable, FieldID),
 		sqlgraph.Edge(sqlgraph.M2O, true, CustomerTable, CustomerColumn),
-	)
-}
-func newSubjectStep() *sqlgraph.Step {
-	return sqlgraph.NewStep(
-		sqlgraph.From(Table, FieldID),
-		sqlgraph.To(SubjectInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, true, SubjectTable, SubjectColumn),
 	)
 }

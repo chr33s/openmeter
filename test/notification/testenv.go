@@ -6,11 +6,14 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	svix "github.com/svix/svix-webhooks/go"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"github.com/openmeterio/openmeter/openmeter/meter"
 	meteradapter "github.com/openmeterio/openmeter/openmeter/meter/mockadapter"
@@ -34,6 +37,7 @@ const (
 	TestFeatureID   = "api-call-id"
 	TestSubjectKey  = "john-doe"
 	TestSubjectID   = "john-doe-id"
+	TestCustomerID  = "john-doe-customer-id"
 	// TestWebhookURL is the target URL where the notifications are sent to.
 	// Use the following URL to verify notifications events sent over webhook channel:
 	// https://play.svix.com/view/e_eyihAQHBB5d6T9ck1iYevP825pg
@@ -111,12 +115,14 @@ func (n testEnv) Namespace() string {
 
 const (
 	DefaultSvixHost             = "127.0.0.1"
-	DefaultSvixJWTSigningSecret = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3MjI5NzYyNzMsImV4cCI6MjAzODMzNjI3MywibmJmIjoxNzIyOTc2MjczLCJpc3MiOiJzdml4LXNlcnZlciIsInN1YiI6Im9yZ18yM3JiOFlkR3FNVDBxSXpwZ0d3ZFhmSGlyTXUifQ.PomP6JWRI62W5N4GtNdJm2h635Q5F54eij0J3BU-_Ds"
+	DefaultSvixJWTSigningSecret = "DUMMY_JWT_SECRET"
 )
 
 func NewTestEnv(t *testing.T, ctx context.Context, namespace string) (TestEnv, error) {
 	t.Helper()
 	logger := slog.Default().WithGroup("notification")
+
+	tracer := noop.NewTracerProvider().Tracer("test")
 
 	driver := testutils.InitPostgresDB(t)
 
@@ -154,13 +160,23 @@ func NewTestEnv(t *testing.T, ctx context.Context, namespace string) (TestEnv, e
 
 	logger.Info("Svix API key", slog.String("apiKey", svixAPIKey))
 
+	svixServerURL, err := url.Parse(fmt.Sprintf(SvixServerURLTemplate, svixHost))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Svix server URL: %w", err)
+	}
+
+	svixAPIClient, err := svix.New(svixAPIKey, &svix.SvixOptions{
+		ServerUrl: svixServerURL,
+		Debug:     false,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Svix API client: %w", err)
+	}
+
 	webhook, err := webhooksvix.New(webhooksvix.Config{
-		SvixConfig: webhooksvix.SvixConfig{
-			APIKey:    svixAPIKey,
-			ServerURL: fmt.Sprintf(SvixServerURLTemplate, svixHost),
-			Debug:     false,
-		},
-		Logger: logger,
+		SvixAPIClient: svixAPIClient,
+		Logger:        logger,
+		Tracer:        tracer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create webhook handler: %w", err)
@@ -170,6 +186,7 @@ func NewTestEnv(t *testing.T, ctx context.Context, namespace string) (TestEnv, e
 		Repository: adapter,
 		Webhook:    webhook,
 		Logger:     logger,
+		Tracer:     tracer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize notification event handler: %w", err)
@@ -178,12 +195,6 @@ func NewTestEnv(t *testing.T, ctx context.Context, namespace string) (TestEnv, e
 	if err = eventHandler.Start(); err != nil {
 		return nil, fmt.Errorf("failed to initialize notification event handler: %w", err)
 	}
-
-	t.Cleanup(func() {
-		if err = eventHandler.Close(); err != nil {
-			logger.Error("failed to close notification event handler", "error", err)
-		}
-	})
 
 	service, err := notificationservice.New(notificationservice.Config{
 		Adapter:          adapter,
@@ -198,6 +209,10 @@ func NewTestEnv(t *testing.T, ctx context.Context, namespace string) (TestEnv, e
 
 	closerFunc := func() error {
 		var errs error
+
+		if err = eventHandler.Close(); err != nil {
+			errs = errors.Join(errs, fmt.Errorf("failed to close notification event handler: %w", err))
+		}
 
 		if err = entClient.Close(); err != nil {
 			errs = errors.Join(errs, fmt.Errorf("failed to close ent driver: %w", err))

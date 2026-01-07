@@ -78,9 +78,19 @@ func NewTestEnv(t *testing.T, ctx context.Context) (TestEnv, error) {
 	driver := testutils.InitPostgresDB(t)
 
 	entClient := driver.EntDriver.Client()
-	if err := migrate.Up(driver.URL); err != nil {
+	migrator, err := migrate.New(migrate.MigrateOptions{
+		ConnectionString: driver.URL,
+		Migrations:       migrate.OMMigrationsConfig,
+		Logger:           testutils.NewLogger(t),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create migrator: %w", err)
+	}
+	if err := migrator.Up(); err != nil {
 		t.Fatalf("failed to create schema: %v", err)
 	}
+
+	defer migrator.CloseOrLogError()
 
 	// Customer
 	customerAdapter, err := customeradapter.New(customeradapter.Config{
@@ -111,8 +121,7 @@ func NewTestEnv(t *testing.T, ctx context.Context) (TestEnv, error) {
 
 	// App
 	appAdapter, err := appadapter.New(appadapter.Config{
-		Client:  entClient,
-		BaseURL: "http://localhost:8888",
+		Client: entClient,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create app adapter: %w", err)
@@ -135,6 +144,11 @@ func NewTestEnv(t *testing.T, ctx context.Context) (TestEnv, error) {
 		return nil, fmt.Errorf("failed to create billing service: %w", err)
 	}
 
+	webhookURLGenerator, err := appstripeservice.NewBaseURLWebhookURLGenerator("http://localhost:8888")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create webhook url generator: %w", err)
+	}
+
 	// App Stripe
 	appStripeAdapter, err := appstripeadapter.New(appstripeadapter.Config{
 		Client:          entClient,
@@ -148,12 +162,13 @@ func NewTestEnv(t *testing.T, ctx context.Context) (TestEnv, error) {
 	}
 
 	_, err = appstripeservice.New(appstripeservice.Config{
-		Adapter:        appStripeAdapter,
-		AppService:     appService,
-		SecretService:  secretService,
-		Logger:         logger,
-		BillingService: billingService,
-		Publisher:      publisher,
+		Adapter:             appStripeAdapter,
+		AppService:          appService,
+		SecretService:       secretService,
+		Logger:              logger,
+		BillingService:      billingService,
+		Publisher:           publisher,
+		WebhookURLGenerator: webhookURLGenerator,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create appstripe service: %w", err)

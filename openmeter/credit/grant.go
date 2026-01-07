@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/openmeterio/openmeter/openmeter/credit/grant"
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/framework/entutils"
@@ -24,16 +26,31 @@ type CreateGrantInput struct {
 	Amount           float64
 	Priority         uint8
 	EffectiveAt      time.Time
-	Expiration       grant.ExpirationPeriod
+	Expiration       *grant.ExpirationPeriod
 	Metadata         map[string]string
+	Annotations      models.Annotations
 	ResetMaxRollover float64
 	ResetMinRollover float64
 	Recurrence       *timeutil.Recurrence
 }
 
+func (i CreateGrantInput) Validate() error {
+	if i.Amount <= 0 {
+		return ErrGrantAmountMustBePositive.WithAttr("amount", i.Amount)
+	}
+	if i.EffectiveAt.IsZero() {
+		return ErrGrantEffectiveAtMustBeSet.WithAttr("effective_at", i.EffectiveAt)
+	}
+	return nil
+}
+
 func (m *connector) CreateGrant(ctx context.Context, ownerID models.NamespacedID, input CreateGrantInput) (*grant.Grant, error) {
 	ctx, span := m.Tracer.Start(ctx, "credit.CreateGrant", cTrace.WithOwner(ownerID))
 	defer span.End()
+
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
 
 	return transaction.Run(ctx, m.GrantRepo, func(ctx context.Context) (*grant.Grant, error) {
 		tx, err := entutils.GetDriverFromContext(ctx)
@@ -45,7 +62,7 @@ func (m *connector) CreateGrant(ctx context.Context, ownerID models.NamespacedID
 		// so we cannot do accurate calculations unless we follow that same windowing.
 		owner, err := m.OwnerConnector.DescribeOwner(ctx, ownerID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to describe owner: %w", err)
 		}
 		granularity := time.Minute
 		input.EffectiveAt = input.EffectiveAt.Truncate(granularity)
@@ -65,19 +82,26 @@ func (m *connector) CreateGrant(ctx context.Context, ownerID models.NamespacedID
 		if err != nil {
 			return nil, err
 		}
-		g, err := m.GrantRepo.WithTx(ctx, tx).CreateGrant(ctx, grant.RepoCreateInput{
+		repoInp := grant.RepoCreateInput{
 			OwnerID:          ownerID.ID,
 			Namespace:        ownerID.Namespace,
 			Amount:           input.Amount,
 			Priority:         input.Priority,
 			EffectiveAt:      input.EffectiveAt,
 			Expiration:       input.Expiration,
-			ExpiresAt:        input.Expiration.GetExpiration(input.EffectiveAt),
 			Metadata:         input.Metadata,
+			Annotations:      input.Annotations,
 			ResetMaxRollover: input.ResetMaxRollover,
 			ResetMinRollover: input.ResetMinRollover,
 			Recurrence:       input.Recurrence,
-		})
+		}
+
+		if input.Expiration != nil {
+			repoInp.ExpiresAt = lo.ToPtr(input.Expiration.GetExpiration(input.EffectiveAt))
+			repoInp.Expiration = input.Expiration
+		}
+
+		g, err := m.GrantRepo.WithTx(ctx, tx).CreateGrant(ctx, repoInp)
 		if err != nil {
 			return nil, err
 		}

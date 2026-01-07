@@ -19,6 +19,7 @@ type Meter struct {
 func (Meter) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		entutils.UniqueResourceMixin{},
+		entutils.AnnotationsMixin{},
 	}
 }
 
@@ -37,11 +38,14 @@ func (Meter) Fields() []ent.Field {
 
 // Indexes of the Meter.
 func (Meter) Indexes() []ent.Index {
-	return []ent.Index{index.Fields("namespace", "key").
-		Annotations(
-			entsql.IndexWhere("deleted_at IS NULL"),
-		).
-		Unique()}
+	return []ent.Index{
+		index.Fields("namespace", "key").
+			Annotations(
+				entsql.IndexWhere("deleted_at IS NULL"),
+			).
+			Unique(),
+		index.Fields("namespace", "event_type"),
+	}
 }
 
 // Edges of the Meter.

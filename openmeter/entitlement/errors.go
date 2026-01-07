@@ -9,11 +9,11 @@ import (
 type AlreadyExistsError struct {
 	EntitlementID string
 	FeatureID     string
-	SubjectKey    string
+	CustomerID    string
 }
 
 func (e *AlreadyExistsError) Error() string {
-	return fmt.Sprintf("entitlement with id %s already exists for feature %s and subject %s", e.EntitlementID, e.FeatureID, e.SubjectKey)
+	return fmt.Sprintf("entitlement with id %s already exists for feature %s and customer %s", e.EntitlementID, e.FeatureID, e.CustomerID)
 }
 
 type AlreadyDeletedError struct {
@@ -72,4 +72,11 @@ const ErrCodeEntitlementCreatePropertyMismatch models.ErrorCode = "entitlement_c
 var ErrEntitlementCreatePropertyMismatch = models.NewValidationIssue(
 	ErrCodeEntitlementCreatePropertyMismatch,
 	"entitlement create property mismatch",
+)
+
+const ErrCodeEntitlementGrantsOnlySupportedForMeteredEntitlements models.ErrorCode = "entitlement_grants_only_supported_for_metered_entitlements"
+
+var ErrEntitlementGrantsOnlySupportedForMeteredEntitlements = models.NewValidationIssue(
+	ErrCodeEntitlementGrantsOnlySupportedForMeteredEntitlements,
+	"grants are only supported for metered entitlements",
 )

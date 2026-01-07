@@ -7,7 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/openmeterio/openmeter/cmd/jobs/internal"
-	billingworkersubscription "github.com/openmeterio/openmeter/openmeter/billing/worker/subscription"
+	"github.com/openmeterio/openmeter/openmeter/billing/worker/subscriptionsync/reconciler"
 )
 
 const (
@@ -35,7 +35,7 @@ var ListCmd = func() *cobra.Command {
 		Use:   "list",
 		Short: "List subscriptions which can be synced",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			subs, err := internal.App.BillingSubscriptionReconciler.ListSubscriptions(cmd.Context(), billingworkersubscription.ReconcilerListSubscriptionsInput{
+			subs, err := internal.App.BillingSubscriptionReconciler.ListSubscriptions(cmd.Context(), reconciler.ReconcilerListSubscriptionsInput{
 				Namespaces: namespaces,
 				Customers:  customerIDs,
 				Lookback:   lookback,
@@ -70,14 +70,19 @@ var ListCmd = func() *cobra.Command {
 }
 
 var AllCmd = func() *cobra.Command {
+	var force bool
+
 	cmd := &cobra.Command{
 		Use:   "all",
 		Short: "Sync all subscriptions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return internal.App.BillingSubscriptionReconciler.All(cmd.Context(), billingworkersubscription.ReconcilerAllInput{
-				Namespaces: namespaces,
-				Customers:  customerIDs,
-				Lookback:   lookback,
+			return internal.App.BillingSubscriptionReconciler.All(cmd.Context(), reconciler.ReconcilerAllInput{
+				ReconcilerListSubscriptionsInput: reconciler.ReconcilerListSubscriptionsInput{
+					Namespaces: namespaces,
+					Customers:  customerIDs,
+					Lookback:   lookback,
+				},
+				Force: force,
 			})
 		},
 	}
@@ -85,5 +90,6 @@ var AllCmd = func() *cobra.Command {
 	cmd.PersistentFlags().StringSliceVar(&namespaces, "n", nil, "filter by namespaces")
 	cmd.PersistentFlags().StringSliceVar(&customerIDs, "c", nil, "filter by customer ids")
 	cmd.PersistentFlags().DurationVar(&lookback, "l", defaultLookback, "lookback period")
+	cmd.PersistentFlags().BoolVar(&force, "f", false, "force reconciliation (even if the sync state would not necessarily require it)")
 	return cmd
 }

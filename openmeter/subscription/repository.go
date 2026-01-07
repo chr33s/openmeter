@@ -18,6 +18,8 @@ type CreateSubscriptionEntityInput struct {
 	models.NamespacedModel
 	models.MetadataModel
 
+	Annotations models.Annotations `json:"annotations"`
+
 	Plan        *PlanRef
 	Name        string  `json:"name,omitempty"`
 	Description *string `json:"description,omitempty"`
@@ -40,9 +42,6 @@ type SubscriptionRepository interface {
 
 	models.CadencedResourceRepo[Subscription]
 
-	// Returns all subscriptions active or scheduled after the given timestamp
-	GetAllForCustomerSince(ctx context.Context, customerID models.NamespacedID, at time.Time) ([]Subscription, error)
-
 	// Returns the subscription by ID
 	GetByID(ctx context.Context, subscriptionID models.NamespacedID) (Subscription, error)
 
@@ -54,6 +53,9 @@ type SubscriptionRepository interface {
 
 	// List subscriptions
 	List(ctx context.Context, params ListSubscriptionsInput) (SubscriptionList, error)
+
+	// UpdateAnnotations updates the annotations of a subscription
+	UpdateAnnotations(ctx context.Context, id models.NamespacedID, annotations models.Annotations) (*Subscription, error)
 }
 
 type CreateSubscriptionPhaseEntityInput struct {
@@ -86,11 +88,19 @@ func (i CreateSubscriptionPhaseEntityInput) Equal(other CreateSubscriptionPhaseE
 	return reflect.DeepEqual(i, other)
 }
 
+type GetForSubscriptionAtInput struct {
+	Namespace      string
+	SubscriptionID string
+	At             time.Time
+}
+
 type SubscriptionPhaseRepository interface {
 	entutils.TxCreator
 
 	// Returns the phases for a subscription
-	GetForSubscriptionAt(ctx context.Context, subscriptionID models.NamespacedID, at time.Time) ([]SubscriptionPhase, error)
+	GetForSubscriptionAt(ctx context.Context, input GetForSubscriptionAtInput) ([]SubscriptionPhase, error)
+	// Returns the phases for a list of subscriptions
+	GetForSubscriptionsAt(ctx context.Context, input []GetForSubscriptionAtInput) ([]SubscriptionPhase, error)
 
 	// Create a new subscription phase
 	Create(ctx context.Context, input CreateSubscriptionPhaseEntityInput) (SubscriptionPhase, error)
@@ -138,7 +148,8 @@ func (i CreateSubscriptionItemEntityInput) Equal(other CreateSubscriptionItemEnt
 type SubscriptionItemRepository interface {
 	entutils.TxCreator
 
-	GetForSubscriptionAt(ctx context.Context, subscriptionID models.NamespacedID, at time.Time) ([]SubscriptionItem, error)
+	GetForSubscriptionAt(ctx context.Context, inp GetForSubscriptionAtInput) ([]SubscriptionItem, error)
+	GetForSubscriptionsAt(ctx context.Context, input []GetForSubscriptionAtInput) ([]SubscriptionItem, error)
 
 	Create(ctx context.Context, input CreateSubscriptionItemEntityInput) (SubscriptionItem, error)
 	Delete(ctx context.Context, id models.NamespacedID) error

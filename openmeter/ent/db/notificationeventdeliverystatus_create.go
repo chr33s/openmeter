@@ -15,6 +15,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/ent/db/notificationevent"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/notificationeventdeliverystatus"
 	"github.com/openmeterio/openmeter/openmeter/notification"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
 // NotificationEventDeliveryStatusCreate is the builder for creating a NotificationEventDeliveryStatus entity.
@@ -28,6 +29,12 @@ type NotificationEventDeliveryStatusCreate struct {
 // SetNamespace sets the "namespace" field.
 func (_c *NotificationEventDeliveryStatusCreate) SetNamespace(v string) *NotificationEventDeliveryStatusCreate {
 	_c.mutation.SetNamespace(v)
+	return _c
+}
+
+// SetAnnotations sets the "annotations" field.
+func (_c *NotificationEventDeliveryStatusCreate) SetAnnotations(v models.Annotations) *NotificationEventDeliveryStatusCreate {
+	_c.mutation.SetAnnotations(v)
 	return _c
 }
 
@@ -96,6 +103,26 @@ func (_c *NotificationEventDeliveryStatusCreate) SetNillableReason(v *string) *N
 	if v != nil {
 		_c.SetReason(*v)
 	}
+	return _c
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (_c *NotificationEventDeliveryStatusCreate) SetNextAttemptAt(v time.Time) *NotificationEventDeliveryStatusCreate {
+	_c.mutation.SetNextAttemptAt(v)
+	return _c
+}
+
+// SetNillableNextAttemptAt sets the "next_attempt_at" field if the given value is not nil.
+func (_c *NotificationEventDeliveryStatusCreate) SetNillableNextAttemptAt(v *time.Time) *NotificationEventDeliveryStatusCreate {
+	if v != nil {
+		_c.SetNextAttemptAt(*v)
+	}
+	return _c
+}
+
+// SetAttempts sets the "attempts" field.
+func (_c *NotificationEventDeliveryStatusCreate) SetAttempts(v []notification.EventDeliveryAttempt) *NotificationEventDeliveryStatusCreate {
+	_c.mutation.SetAttempts(v)
 	return _c
 }
 
@@ -261,6 +288,10 @@ func (_c *NotificationEventDeliveryStatusCreate) createSpec() (*NotificationEven
 		_spec.SetField(notificationeventdeliverystatus.FieldNamespace, field.TypeString, value)
 		_node.Namespace = value
 	}
+	if value, ok := _c.mutation.Annotations(); ok {
+		_spec.SetField(notificationeventdeliverystatus.FieldAnnotations, field.TypeJSON, value)
+		_node.Annotations = value
+	}
 	if value, ok := _c.mutation.CreatedAt(); ok {
 		_spec.SetField(notificationeventdeliverystatus.FieldCreatedAt, field.TypeTime, value)
 		_node.CreatedAt = value
@@ -284,6 +315,14 @@ func (_c *NotificationEventDeliveryStatusCreate) createSpec() (*NotificationEven
 	if value, ok := _c.mutation.Reason(); ok {
 		_spec.SetField(notificationeventdeliverystatus.FieldReason, field.TypeString, value)
 		_node.Reason = value
+	}
+	if value, ok := _c.mutation.NextAttemptAt(); ok {
+		_spec.SetField(notificationeventdeliverystatus.FieldNextAttemptAt, field.TypeTime, value)
+		_node.NextAttemptAt = &value
+	}
+	if value, ok := _c.mutation.Attempts(); ok {
+		_spec.SetField(notificationeventdeliverystatus.FieldAttempts, field.TypeJSON, value)
+		_node.Attempts = value
 	}
 	if nodes := _c.mutation.EventsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -353,6 +392,24 @@ type (
 	}
 )
 
+// SetAnnotations sets the "annotations" field.
+func (u *NotificationEventDeliveryStatusUpsert) SetAnnotations(v models.Annotations) *NotificationEventDeliveryStatusUpsert {
+	u.Set(notificationeventdeliverystatus.FieldAnnotations, v)
+	return u
+}
+
+// UpdateAnnotations sets the "annotations" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsert) UpdateAnnotations() *NotificationEventDeliveryStatusUpsert {
+	u.SetExcluded(notificationeventdeliverystatus.FieldAnnotations)
+	return u
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (u *NotificationEventDeliveryStatusUpsert) ClearAnnotations() *NotificationEventDeliveryStatusUpsert {
+	u.SetNull(notificationeventdeliverystatus.FieldAnnotations)
+	return u
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (u *NotificationEventDeliveryStatusUpsert) SetUpdatedAt(v time.Time) *NotificationEventDeliveryStatusUpsert {
 	u.Set(notificationeventdeliverystatus.FieldUpdatedAt, v)
@@ -392,6 +449,42 @@ func (u *NotificationEventDeliveryStatusUpsert) UpdateReason() *NotificationEven
 // ClearReason clears the value of the "reason" field.
 func (u *NotificationEventDeliveryStatusUpsert) ClearReason() *NotificationEventDeliveryStatusUpsert {
 	u.SetNull(notificationeventdeliverystatus.FieldReason)
+	return u
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (u *NotificationEventDeliveryStatusUpsert) SetNextAttemptAt(v time.Time) *NotificationEventDeliveryStatusUpsert {
+	u.Set(notificationeventdeliverystatus.FieldNextAttemptAt, v)
+	return u
+}
+
+// UpdateNextAttemptAt sets the "next_attempt_at" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsert) UpdateNextAttemptAt() *NotificationEventDeliveryStatusUpsert {
+	u.SetExcluded(notificationeventdeliverystatus.FieldNextAttemptAt)
+	return u
+}
+
+// ClearNextAttemptAt clears the value of the "next_attempt_at" field.
+func (u *NotificationEventDeliveryStatusUpsert) ClearNextAttemptAt() *NotificationEventDeliveryStatusUpsert {
+	u.SetNull(notificationeventdeliverystatus.FieldNextAttemptAt)
+	return u
+}
+
+// SetAttempts sets the "attempts" field.
+func (u *NotificationEventDeliveryStatusUpsert) SetAttempts(v []notification.EventDeliveryAttempt) *NotificationEventDeliveryStatusUpsert {
+	u.Set(notificationeventdeliverystatus.FieldAttempts, v)
+	return u
+}
+
+// UpdateAttempts sets the "attempts" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsert) UpdateAttempts() *NotificationEventDeliveryStatusUpsert {
+	u.SetExcluded(notificationeventdeliverystatus.FieldAttempts)
+	return u
+}
+
+// ClearAttempts clears the value of the "attempts" field.
+func (u *NotificationEventDeliveryStatusUpsert) ClearAttempts() *NotificationEventDeliveryStatusUpsert {
+	u.SetNull(notificationeventdeliverystatus.FieldAttempts)
 	return u
 }
 
@@ -455,6 +548,27 @@ func (u *NotificationEventDeliveryStatusUpsertOne) Update(set func(*Notification
 	return u
 }
 
+// SetAnnotations sets the "annotations" field.
+func (u *NotificationEventDeliveryStatusUpsertOne) SetAnnotations(v models.Annotations) *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.SetAnnotations(v)
+	})
+}
+
+// UpdateAnnotations sets the "annotations" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsertOne) UpdateAnnotations() *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.UpdateAnnotations()
+	})
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (u *NotificationEventDeliveryStatusUpsertOne) ClearAnnotations() *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.ClearAnnotations()
+	})
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (u *NotificationEventDeliveryStatusUpsertOne) SetUpdatedAt(v time.Time) *NotificationEventDeliveryStatusUpsertOne {
 	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
@@ -501,6 +615,48 @@ func (u *NotificationEventDeliveryStatusUpsertOne) UpdateReason() *NotificationE
 func (u *NotificationEventDeliveryStatusUpsertOne) ClearReason() *NotificationEventDeliveryStatusUpsertOne {
 	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
 		s.ClearReason()
+	})
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (u *NotificationEventDeliveryStatusUpsertOne) SetNextAttemptAt(v time.Time) *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.SetNextAttemptAt(v)
+	})
+}
+
+// UpdateNextAttemptAt sets the "next_attempt_at" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsertOne) UpdateNextAttemptAt() *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.UpdateNextAttemptAt()
+	})
+}
+
+// ClearNextAttemptAt clears the value of the "next_attempt_at" field.
+func (u *NotificationEventDeliveryStatusUpsertOne) ClearNextAttemptAt() *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.ClearNextAttemptAt()
+	})
+}
+
+// SetAttempts sets the "attempts" field.
+func (u *NotificationEventDeliveryStatusUpsertOne) SetAttempts(v []notification.EventDeliveryAttempt) *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.SetAttempts(v)
+	})
+}
+
+// UpdateAttempts sets the "attempts" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsertOne) UpdateAttempts() *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.UpdateAttempts()
+	})
+}
+
+// ClearAttempts clears the value of the "attempts" field.
+func (u *NotificationEventDeliveryStatusUpsertOne) ClearAttempts() *NotificationEventDeliveryStatusUpsertOne {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.ClearAttempts()
 	})
 }
 
@@ -731,6 +887,27 @@ func (u *NotificationEventDeliveryStatusUpsertBulk) Update(set func(*Notificatio
 	return u
 }
 
+// SetAnnotations sets the "annotations" field.
+func (u *NotificationEventDeliveryStatusUpsertBulk) SetAnnotations(v models.Annotations) *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.SetAnnotations(v)
+	})
+}
+
+// UpdateAnnotations sets the "annotations" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsertBulk) UpdateAnnotations() *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.UpdateAnnotations()
+	})
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (u *NotificationEventDeliveryStatusUpsertBulk) ClearAnnotations() *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.ClearAnnotations()
+	})
+}
+
 // SetUpdatedAt sets the "updated_at" field.
 func (u *NotificationEventDeliveryStatusUpsertBulk) SetUpdatedAt(v time.Time) *NotificationEventDeliveryStatusUpsertBulk {
 	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
@@ -777,6 +954,48 @@ func (u *NotificationEventDeliveryStatusUpsertBulk) UpdateReason() *Notification
 func (u *NotificationEventDeliveryStatusUpsertBulk) ClearReason() *NotificationEventDeliveryStatusUpsertBulk {
 	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
 		s.ClearReason()
+	})
+}
+
+// SetNextAttemptAt sets the "next_attempt_at" field.
+func (u *NotificationEventDeliveryStatusUpsertBulk) SetNextAttemptAt(v time.Time) *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.SetNextAttemptAt(v)
+	})
+}
+
+// UpdateNextAttemptAt sets the "next_attempt_at" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsertBulk) UpdateNextAttemptAt() *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.UpdateNextAttemptAt()
+	})
+}
+
+// ClearNextAttemptAt clears the value of the "next_attempt_at" field.
+func (u *NotificationEventDeliveryStatusUpsertBulk) ClearNextAttemptAt() *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.ClearNextAttemptAt()
+	})
+}
+
+// SetAttempts sets the "attempts" field.
+func (u *NotificationEventDeliveryStatusUpsertBulk) SetAttempts(v []notification.EventDeliveryAttempt) *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.SetAttempts(v)
+	})
+}
+
+// UpdateAttempts sets the "attempts" field to the value that was provided on create.
+func (u *NotificationEventDeliveryStatusUpsertBulk) UpdateAttempts() *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.UpdateAttempts()
+	})
+}
+
+// ClearAttempts clears the value of the "attempts" field.
+func (u *NotificationEventDeliveryStatusUpsertBulk) ClearAttempts() *NotificationEventDeliveryStatusUpsertBulk {
+	return u.Update(func(s *NotificationEventDeliveryStatusUpsert) {
+		s.ClearAttempts()
 	})
 }
 

@@ -34,7 +34,7 @@ func Test_CustomerService(t *testing.T) {
 				CustomerMutate: customer.CustomerMutate{
 					Key:  lo.ToPtr("acme-inc"),
 					Name: "ACME Inc.",
-					UsageAttribution: customer.CustomerUsageAttribution{
+					UsageAttribution: &customer.CustomerUsageAttribution{
 						SubjectKeys: []string{
 							"acme-inc",
 						},
@@ -86,8 +86,8 @@ func Test_CustomerService(t *testing.T) {
 
 				t.Run("ByUsageAttribution", func(t *testing.T) {
 					cusByUsage, err := env.CustomerService.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
-						Namespace:  cus.Namespace,
-						SubjectKey: cus.UsageAttribution.SubjectKeys[0],
+						Namespace: cus.Namespace,
+						Key:       cus.UsageAttribution.SubjectKeys[0],
 					})
 					require.NoError(t, err, "getting customer usage attribution should not fail")
 					assert.NotNilf(t, cusByUsage, "customer must not be nil")
@@ -115,7 +115,7 @@ func Test_CustomerService(t *testing.T) {
 					CustomerMutate: customer.CustomerMutate{
 						Key:  cus.Key,
 						Name: cus.Name,
-						UsageAttribution: customer.CustomerUsageAttribution{
+						UsageAttribution: &customer.CustomerUsageAttribution{
 							SubjectKeys: subjectKeys,
 						},
 					},
@@ -128,8 +128,8 @@ func Test_CustomerService(t *testing.T) {
 
 				t.Run("ByUsageAttribution", func(t *testing.T) {
 					cusByUsage, err := env.CustomerService.GetCustomerByUsageAttribution(ctx, customer.GetCustomerByUsageAttributionInput{
-						Namespace:  cus.Namespace,
-						SubjectKey: subjectKeys[1],
+						Namespace: cus.Namespace,
+						Key:       subjectKeys[1],
 					})
 					require.NoError(t, err, "getting customer usage attribution should not fail")
 					assert.NotNilf(t, cusByUsage, "customer must not be nil")

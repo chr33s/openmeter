@@ -49,7 +49,7 @@ func NewFeatureHandler(
 
 type (
 	GetFeatureHandlerRequest  = models.NamespacedID
-	GetFeatureHandlerResponse = *feature.Feature
+	GetFeatureHandlerResponse = api.Feature
 	GetFeatureHandlerParams   = string
 )
 
@@ -69,7 +69,12 @@ func (h *featureHandlers) GetFeature() GetFeatureHandler {
 			}, nil
 		},
 		func(ctx context.Context, featureId GetFeatureHandlerRequest) (GetFeatureHandlerResponse, error) {
-			return h.connector.GetFeature(ctx, featureId.Namespace, featureId.ID, feature.IncludeArchivedFeatureFalse)
+			feature, err := h.connector.GetFeature(ctx, featureId.Namespace, featureId.ID, feature.IncludeArchivedFeatureFalse)
+			if err != nil {
+				return api.Feature{}, err
+			}
+
+			return MapFeatureToResponse(*feature), nil
 		},
 		commonhttp.JSONResponseEncoder,
 		httptransport.AppendOptions(
@@ -82,7 +87,7 @@ func (h *featureHandlers) GetFeature() GetFeatureHandler {
 
 type (
 	CreateFeatureHandlerRequest  = feature.CreateFeatureInputs
-	CreateFeatureHandlerResponse = feature.Feature
+	CreateFeatureHandlerResponse = api.Feature
 )
 
 type CreateFeatureHandler httptransport.Handler[CreateFeatureHandlerRequest, CreateFeatureHandlerResponse]
@@ -101,19 +106,16 @@ func (h *featureHandlers) CreateFeature() CreateFeatureHandler {
 				return emptyFeature, err
 			}
 
-			return feature.CreateFeatureInputs{
-				Namespace:           ns,
-				Name:                parsedBody.Name,
-				Key:                 parsedBody.Key,
-				MeterSlug:           parsedBody.MeterSlug,
-				MeterGroupByFilters: convert.DerefHeaderPtr[string](parsedBody.MeterGroupByFilters),
-				Metadata:            convert.DerefHeaderPtr[string](parsedBody.Metadata),
-			}, nil
+			return MapFeatureCreateInputsRequest(ns, parsedBody), nil
 		},
-		func(ctx context.Context, feature feature.CreateFeatureInputs) (feature.Feature, error) {
-			return h.connector.CreateFeature(ctx, feature)
+		func(ctx context.Context, feature feature.CreateFeatureInputs) (api.Feature, error) {
+			createdFeature, err := h.connector.CreateFeature(ctx, feature)
+			if err != nil {
+				return api.Feature{}, err
+			}
+			return MapFeatureToResponse(createdFeature), nil
 		},
-		commonhttp.JSONResponseEncoderWithStatus[feature.Feature](http.StatusCreated),
+		commonhttp.JSONResponseEncoderWithStatus[api.Feature](http.StatusCreated),
 		httptransport.AppendOptions(
 			h.options,
 			httptransport.WithOperationName("createFeature"),
@@ -232,10 +234,7 @@ func (h *featureHandlers) DeleteFeature() DeleteFeatureHandler {
 			return id, nil
 		},
 		operation.AsNoResponseOperation(h.connector.ArchiveFeature),
-		func(ctx context.Context, w http.ResponseWriter, response any) error {
-			w.WriteHeader(http.StatusNoContent)
-			return nil
-		},
+		commonhttp.EmptyResponseEncoder[DeleteFeatureHandlerResponse](http.StatusNoContent),
 		httptransport.AppendOptions(
 			h.options,
 			httptransport.WithOperationName("deleteFeature"),

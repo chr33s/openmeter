@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
+
+	"github.com/samber/lo"
 
 	entdb "github.com/openmeterio/openmeter/openmeter/ent/db"
 	statusdb "github.com/openmeterio/openmeter/openmeter/ent/db/notificationeventdeliverystatus"
@@ -100,56 +103,38 @@ func (a *adapter) GetEventDeliveryStatus(ctx context.Context, params notificatio
 
 func (a *adapter) UpdateEventDeliveryStatus(ctx context.Context, params notification.UpdateEventDeliveryStatusInput) (*notification.EventDeliveryStatus, error) {
 	fn := func(ctx context.Context, a *adapter) (*notification.EventDeliveryStatus, error) {
-		var updateQuery *entdb.NotificationEventDeliveryStatusUpdateOne
-
-		if params.ID != "" {
-			updateQuery = a.db.NotificationEventDeliveryStatus.UpdateOneID(params.ID)
-		} else {
-			getQuery := a.db.NotificationEventDeliveryStatus.Query().
-				Where(statusdb.Namespace(params.Namespace)).
-				Where(statusdb.EventID(params.EventID)).
-				Where(statusdb.ChannelID(params.ChannelID))
-
-			statusRow, err := getQuery.First(ctx)
-			if err != nil {
-				if entdb.IsNotFound(err) {
-					return nil, notification.NotFoundError{
-						NamespacedID: models.NamespacedID{
-							Namespace: params.Namespace,
-							ID:        params.EventID,
-						},
-					}
-				}
-
-				return nil, fmt.Errorf("failed to udpate notification event delivery status: %w", err)
+		nextAttempt := func() *time.Time {
+			if params.NextAttempt == nil {
+				return nil
 			}
 
-			updateQuery = a.db.NotificationEventDeliveryStatus.UpdateOne(statusRow)
-		}
+			return lo.ToPtr(lo.FromPtr(params.NextAttempt).UTC())
+		}()
 
-		updateQuery = updateQuery.
+		query := a.db.NotificationEventDeliveryStatus.UpdateOneID(params.ID).
+			Where(statusdb.Namespace(params.Namespace)).
 			SetState(params.State).
-			SetReason(params.Reason)
+			SetReason(params.Reason).
+			SetAnnotations(params.Annotations).
+			SetOrClearNextAttemptAt(nextAttempt).
+			SetAttempts(params.Attempts)
 
-		updateRow, err := updateQuery.Save(ctx)
+		row, err := query.Save(ctx)
 		if err != nil {
 			if entdb.IsNotFound(err) {
 				return nil, notification.NotFoundError{
-					NamespacedID: models.NamespacedID{
-						Namespace: params.Namespace,
-						ID:        params.EventID,
-					},
+					NamespacedID: params.NamespacedID,
 				}
 			}
 
 			return nil, fmt.Errorf("failed to create notification event delivery status: %w", err)
 		}
 
-		if updateRow == nil {
+		if row == nil {
 			return nil, fmt.Errorf("invalid query response: no delivery status received")
 		}
 
-		return EventDeliveryStatusFromDBEntity(*updateRow), nil
+		return EventDeliveryStatusFromDBEntity(*row), nil
 	}
 
 	return entutils.TransactingRepo(ctx, a, fn)

@@ -10,12 +10,13 @@ import "..";
 import "./entitlements.tsp";
 import "./customer.tsp";
 import "./grants.tsp";
+import "./grant.tsp";
 
 using TypeSpec.Http;
 using TypeSpec.Rest;
 using TypeSpec.OpenAPI;
 using TypeSpec.Versioning;
 
-namespace OpenMeter.Entitlements.V2;
+namespace OpenMeter;
 
 // NOTE: Public types, operationIDs and friendlyNames of versioned packages should will use the version suffix.

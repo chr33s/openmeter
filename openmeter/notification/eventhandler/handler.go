@@ -2,33 +2,51 @@ package eventhandler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	"github.com/openmeterio/openmeter/openmeter/notification"
 	"github.com/openmeterio/openmeter/openmeter/notification/webhook"
+	"github.com/openmeterio/openmeter/pkg/framework/lockr"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
 type Config struct {
 	Repository        notification.Repository
 	Webhook           webhook.Handler
 	Logger            *slog.Logger
+	Tracer            trace.Tracer
 	ReconcileInterval time.Duration
+	SendingTimeout    time.Duration
+	PendingTimeout    time.Duration
 }
 
 func (c *Config) Validate() error {
+	var errs []error
+
 	if c.Repository == nil {
-		return fmt.Errorf("repository is required")
+		errs = append(errs, fmt.Errorf("repository is required"))
 	}
 
 	if c.Webhook == nil {
-		return fmt.Errorf("webhook is required")
+		errs = append(errs, fmt.Errorf("webhook is required"))
 	}
 
-	return nil
+	if c.Logger == nil {
+		errs = append(errs, fmt.Errorf("logger is required"))
+	}
+
+	if c.Tracer == nil {
+		errs = append(errs, fmt.Errorf("tracer is required"))
+	}
+
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
 }
 
 var _ notification.EventHandler = (*Handler)(nil)
@@ -36,12 +54,20 @@ var _ notification.EventHandler = (*Handler)(nil)
 type Handler struct {
 	repo    notification.Repository
 	webhook webhook.Handler
-	logger  *slog.Logger
+
+	logger *slog.Logger
+	tracer trace.Tracer
 
 	reconcileInterval time.Duration
 
 	stopCh      chan struct{}
 	stopChClose func()
+
+	lockr *lockr.Locker
+
+	// Delivery status timeouts
+	sendingTimeout time.Duration
+	pendingTimeout time.Duration
 }
 
 func (h *Handler) Start() error {
@@ -93,8 +119,17 @@ func New(config Config) (*Handler, error) {
 		config.ReconcileInterval = notification.DefaultReconcileInterval
 	}
 
-	if config.Logger == nil {
-		config.Logger = slog.Default()
+	if config.PendingTimeout == 0 {
+		config.PendingTimeout = notification.DefaultDeliveryStatePendingTimeout
+	}
+
+	if config.SendingTimeout == 0 {
+		config.SendingTimeout = notification.DefaultDeliveryStateSendingTimeout
+	}
+
+	reconcileLockr, err := lockr.NewLocker(&lockr.LockerConfig{Logger: config.Logger})
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize lockr: %w", err)
 	}
 
 	stopCh := make(chan struct{})
@@ -107,7 +142,11 @@ func New(config Config) (*Handler, error) {
 		webhook:           config.Webhook,
 		reconcileInterval: config.ReconcileInterval,
 		logger:            config.Logger,
+		tracer:            config.Tracer,
 		stopCh:            stopCh,
 		stopChClose:       stopChClose,
+		lockr:             reconcileLockr,
+		sendingTimeout:    config.SendingTimeout,
+		pendingTimeout:    config.PendingTimeout,
 	}, nil
 }

@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 
+	"github.com/openmeterio/openmeter/openmeter/productcatalog/feature"
 	"github.com/openmeterio/openmeter/pkg/framework/entutils"
 )
 
@@ -29,6 +30,7 @@ func (Feature) Fields() []ent.Field {
 		field.String("key").NotEmpty().Immutable(),
 		field.String("meter_slug").Optional().Nillable().Immutable(),
 		field.JSON("meter_group_by_filters", map[string]string{}).Optional(),
+		field.JSON("advanced_meter_group_by_filters", feature.MeterGroupByFilters{}).Optional(),
 		field.Time("archived_at").Optional().Nillable(),
 	}
 }
@@ -41,6 +43,10 @@ func (Feature) Indexes() []ent.Index {
 				entsql.IndexWhere("archived_at IS NULL"),
 			).
 			Unique(),
+		index.Fields("namespace", "meter_slug").
+			Annotations(
+				entsql.IndexWhere("archived_at IS NULL"),
+			),
 	}
 }
 

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/samber/lo"
 
@@ -14,6 +15,8 @@ import (
 	"github.com/openmeterio/openmeter/pkg/clock"
 	"github.com/openmeterio/openmeter/pkg/framework/transaction"
 	"github.com/openmeterio/openmeter/pkg/models"
+	"github.com/openmeterio/openmeter/pkg/pagination"
+	"github.com/openmeterio/openmeter/pkg/timeutil"
 )
 
 func (s *service) CreateFromPlan(ctx context.Context, inp subscriptionworkflow.CreateSubscriptionWorkflowInput, plan subscription.Plan) (subscription.SubscriptionView, error) {
@@ -66,6 +69,7 @@ func (s *service) CreateFromPlan(ctx context.Context, inp subscriptionworkflow.C
 			Name:          lo.CoalesceOrEmpty(inp.Name, plan.GetName()),
 			Description:   inp.Description,
 			BillingAnchor: billingAnchor,
+			Annotations:   inp.Annotations,
 		})
 
 		if err := subscriptionworkflow.MapSubscriptionErrors(err); err != nil {
@@ -196,16 +200,41 @@ func (s *service) ChangeToPlan(ctx context.Context, subscriptionID models.Namesp
 
 		inp.Timing = verbatumTiming
 
+		// Prepare annotations for the new subscription with reference to the previous subscription
+		createInputAnnotations := models.Annotations{}
+		_, err = subscription.AnnotationParser.SetPreviousSubscriptionID(createInputAnnotations, curr.ID)
+		if err != nil {
+			return res{}, fmt.Errorf("failed to set previous subscription ID: %w", err)
+		}
+
 		// Third, let's create a new subscription with the new plan
 		new, err := s.CreateFromPlan(ctx, subscriptionworkflow.CreateSubscriptionWorkflowInput{
 			ChangeSubscriptionWorkflowInput: inp,
 			Namespace:                       curr.Namespace,
 			CustomerID:                      curr.CustomerId,
 			BillingAnchor:                   lo.ToPtr(lo.FromPtrOr(inp.BillingAnchor, curr.BillingAnchor)), // We default to the current anchor
+			Annotations:                     createInputAnnotations,
 		}, plan)
 		if err != nil {
 			return res{}, fmt.Errorf("failed to create new subscription: %w", err)
 		}
+
+		// Update the current subscription to reference the new subscription as superseding
+		currAnnotations := curr.Annotations
+		if currAnnotations == nil {
+			currAnnotations = models.Annotations{}
+		} else {
+			currAnnotations = maps.Clone(currAnnotations)
+		}
+		currAnnotations, err = subscription.AnnotationParser.SetSupersedingSubscriptionID(currAnnotations, new.Subscription.ID)
+		if err != nil {
+			return res{}, fmt.Errorf("failed to set superseding subscription ID: %w", err)
+		}
+		updatedCurr, err := s.Service.UpdateAnnotations(ctx, curr.NamespacedID, currAnnotations)
+		if err != nil {
+			return res{}, fmt.Errorf("failed to update current subscription annotations: %w", err)
+		}
+		curr = *updatedCurr
 
 		// Let's just return after a great success
 		return res{curr, new}, nil
@@ -215,6 +244,15 @@ func (s *service) ChangeToPlan(ctx context.Context, subscriptionID models.Namesp
 }
 
 func (s *service) Restore(ctx context.Context, subscriptionID models.NamespacedID) (subscription.Subscription, error) {
+	multiSubscriptionEnabled, err := s.FeatureFlags.IsFeatureEnabled(ctx, subscription.MultiSubscriptionEnabledFF)
+	if err != nil {
+		return subscription.Subscription{}, fmt.Errorf("failed to check if multi-subscription is enabled: %w", err)
+	}
+
+	if multiSubscriptionEnabled {
+		return subscription.Subscription{}, subscription.ErrRestoreSubscriptionNotAllowedForMultiSubscription
+	}
+
 	return transaction.Run(ctx, s.TransactionManager, func(ctx context.Context) (subscription.Subscription, error) {
 		now := clock.Now()
 
@@ -225,10 +263,14 @@ func (s *service) Restore(ctx context.Context, subscriptionID models.NamespacedI
 		}
 
 		// Let's get all subs scheduled afterward
-		scheduled, err := s.Service.GetAllForCustomerSince(ctx, models.NamespacedID{
-			Namespace: sub.Subscription.Namespace,
-			ID:        sub.Subscription.CustomerId,
-		}, now)
+		scheduled, err := pagination.CollectAll(ctx, pagination.NewPaginator(func(ctx context.Context, page pagination.Page) (pagination.Result[subscription.Subscription], error) {
+			return s.Service.List(ctx, subscription.ListSubscriptionsInput{
+				CustomerIDs:    []string{sub.Subscription.CustomerId},
+				Namespaces:     []string{sub.Subscription.Namespace},
+				ActiveInPeriod: &timeutil.StartBoundedPeriod{From: now},
+				Page:           page,
+			})
+		}), 1000)
 		if err != nil {
 			return subscription.Subscription{}, fmt.Errorf("failed to fetch scheduled subscriptions: %w", err)
 		}

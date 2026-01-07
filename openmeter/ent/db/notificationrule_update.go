@@ -16,6 +16,7 @@ import (
 	"github.com/openmeterio/openmeter/openmeter/ent/db/notificationrule"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/predicate"
 	"github.com/openmeterio/openmeter/openmeter/notification"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
 // NotificationRuleUpdate is the builder for updating NotificationRule entities.
@@ -54,6 +55,30 @@ func (_u *NotificationRuleUpdate) SetNillableDeletedAt(v *time.Time) *Notificati
 // ClearDeletedAt clears the value of the "deleted_at" field.
 func (_u *NotificationRuleUpdate) ClearDeletedAt() *NotificationRuleUpdate {
 	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
+// SetAnnotations sets the "annotations" field.
+func (_u *NotificationRuleUpdate) SetAnnotations(v models.Annotations) *NotificationRuleUpdate {
+	_u.mutation.SetAnnotations(v)
+	return _u
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (_u *NotificationRuleUpdate) ClearAnnotations() *NotificationRuleUpdate {
+	_u.mutation.ClearAnnotations()
+	return _u
+}
+
+// SetMetadata sets the "metadata" field.
+func (_u *NotificationRuleUpdate) SetMetadata(v map[string]string) *NotificationRuleUpdate {
+	_u.mutation.SetMetadata(v)
+	return _u
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (_u *NotificationRuleUpdate) ClearMetadata() *NotificationRuleUpdate {
+	_u.mutation.ClearMetadata()
 	return _u
 }
 
@@ -225,6 +250,11 @@ func (_u *NotificationRuleUpdate) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`db: validator failed for field "NotificationRule.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Config(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "config", err: fmt.Errorf(`db: validator failed for field "NotificationRule.config": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -248,6 +278,18 @@ func (_u *NotificationRuleUpdate) sqlSave(ctx context.Context) (_node int, err e
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(notificationrule.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.Annotations(); ok {
+		_spec.SetField(notificationrule.FieldAnnotations, field.TypeJSON, value)
+	}
+	if _u.mutation.AnnotationsCleared() {
+		_spec.ClearField(notificationrule.FieldAnnotations, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.Metadata(); ok {
+		_spec.SetField(notificationrule.FieldMetadata, field.TypeJSON, value)
+	}
+	if _u.mutation.MetadataCleared() {
+		_spec.ClearField(notificationrule.FieldMetadata, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(notificationrule.FieldName, field.TypeString, value)
@@ -398,6 +440,30 @@ func (_u *NotificationRuleUpdateOne) SetNillableDeletedAt(v *time.Time) *Notific
 // ClearDeletedAt clears the value of the "deleted_at" field.
 func (_u *NotificationRuleUpdateOne) ClearDeletedAt() *NotificationRuleUpdateOne {
 	_u.mutation.ClearDeletedAt()
+	return _u
+}
+
+// SetAnnotations sets the "annotations" field.
+func (_u *NotificationRuleUpdateOne) SetAnnotations(v models.Annotations) *NotificationRuleUpdateOne {
+	_u.mutation.SetAnnotations(v)
+	return _u
+}
+
+// ClearAnnotations clears the value of the "annotations" field.
+func (_u *NotificationRuleUpdateOne) ClearAnnotations() *NotificationRuleUpdateOne {
+	_u.mutation.ClearAnnotations()
+	return _u
+}
+
+// SetMetadata sets the "metadata" field.
+func (_u *NotificationRuleUpdateOne) SetMetadata(v map[string]string) *NotificationRuleUpdateOne {
+	_u.mutation.SetMetadata(v)
+	return _u
+}
+
+// ClearMetadata clears the value of the "metadata" field.
+func (_u *NotificationRuleUpdateOne) ClearMetadata() *NotificationRuleUpdateOne {
+	_u.mutation.ClearMetadata()
 	return _u
 }
 
@@ -582,6 +648,11 @@ func (_u *NotificationRuleUpdateOne) check() error {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`db: validator failed for field "NotificationRule.name": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.Config(); ok {
+		if err := v.Validate(); err != nil {
+			return &ValidationError{Name: "config", err: fmt.Errorf(`db: validator failed for field "NotificationRule.config": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -622,6 +693,18 @@ func (_u *NotificationRuleUpdateOne) sqlSave(ctx context.Context) (_node *Notifi
 	}
 	if _u.mutation.DeletedAtCleared() {
 		_spec.ClearField(notificationrule.FieldDeletedAt, field.TypeTime)
+	}
+	if value, ok := _u.mutation.Annotations(); ok {
+		_spec.SetField(notificationrule.FieldAnnotations, field.TypeJSON, value)
+	}
+	if _u.mutation.AnnotationsCleared() {
+		_spec.ClearField(notificationrule.FieldAnnotations, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.Metadata(); ok {
+		_spec.SetField(notificationrule.FieldMetadata, field.TypeJSON, value)
+	}
+	if _u.mutation.MetadataCleared() {
+		_spec.ClearField(notificationrule.FieldMetadata, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(notificationrule.FieldName, field.TypeString, value)

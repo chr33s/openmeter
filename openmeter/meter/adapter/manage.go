@@ -21,7 +21,7 @@ import (
 // CreateMeter creates a new meter.
 func (a *Adapter) CreateMeter(ctx context.Context, input meterpkg.CreateMeterInput) (meterpkg.Meter, error) {
 	if err := input.Validate(); err != nil {
-		return meterpkg.Meter{}, models.NewGenericValidationError(err)
+		return meterpkg.Meter{}, err
 	}
 
 	return transaction.Run(ctx, a, func(ctx context.Context) (meterpkg.Meter, error) {
@@ -39,6 +39,8 @@ func (a *Adapter) CreateMeter(ctx context.Context, input meterpkg.CreateMeterInp
 					SetNillableEventFrom(input.EventFrom).
 					SetNillableValueProperty(input.ValueProperty).
 					SetGroupBy(input.GroupBy).
+					SetMetadata(input.Metadata).
+					SetAnnotations(input.Annotations).
 					Save(ctx)
 				if err != nil {
 					if db.IsConstraintError(err) {
@@ -71,6 +73,8 @@ func (a *Adapter) UpdateMeter(ctx context.Context, input meterpkg.UpdateMeterInp
 					SetName(input.Name).
 					SetNillableDescription(input.Description).
 					SetGroupBy(input.GroupBy).
+					SetMetadata(input.Metadata).
+					SetOrClearAnnotations(input.Annotations).
 					Save(ctx)
 				if err != nil {
 					if db.IsConstraintError(err) {

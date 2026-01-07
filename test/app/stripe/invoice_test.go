@@ -87,13 +87,19 @@ func (s *StripeInvoiceTestSuite) SetupSuite() {
 	})
 	s.Require().NoError(err, "failed to create app stripe adapter")
 
+	webhookURLGenerator, err := appstripeservice.NewBaseURLWebhookURLGenerator("http://localhost:8888")
+	if err != nil {
+		s.Require().NoError(err, "failed to create webhook url generator")
+	}
+
 	appStripeService, err := appstripeservice.New(appstripeservice.Config{
-		Adapter:        appStripeAdapter,
-		AppService:     s.AppService,
-		SecretService:  secretService,
-		BillingService: s.BillingService,
-		Logger:         slog.Default(),
-		Publisher:      eventbus.NewMock(s.T()),
+		Adapter:             appStripeAdapter,
+		AppService:          s.AppService,
+		SecretService:       secretService,
+		BillingService:      s.BillingService,
+		Logger:              slog.Default(),
+		Publisher:           eventbus.NewMock(s.T()),
+		WebhookURLGenerator: webhookURLGenerator,
 	})
 	s.Require().NoError(err, "failed to create app stripe service")
 
@@ -276,7 +282,7 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 			BillingAddress: &models.Address{
 				Country: lo.ToPtr(models.CountryCode("US")),
 			},
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test"},
 			},
 		},
@@ -296,24 +302,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 				Currency: currencyx.Code(currency.USD),
 				Lines: []*billing.Line{
 					{
-						// Covered case: standalone flat line
-						LineBase: billing.LineBase{
-							ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
-								Name: "Fee",
-							}),
-							Period:    billing.Period{Start: periodStart, End: periodEnd},
-							InvoiceAt: periodEnd,
-							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeFee,
-						},
-						FlatFee: &billing.FlatFeeLine{
-							PerUnitAmount: alpacadecimal.NewFromFloat(100),
-							PaymentTerm:   productcatalog.InArrearsPaymentTerm,
-							Quantity:      alpacadecimal.NewFromFloat(1),
-							Category:      billing.FlatFeeCategoryRegular,
-						},
-					},
-					{
 						// Covered case: Discount caused by maximum amount
 						LineBase: billing.LineBase{
 							ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
@@ -322,7 +310,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.flatPerUnit.Key,
@@ -343,7 +330,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.aiFlatPerUnit.Key,
@@ -361,7 +347,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.flatPerUsage.Key,
@@ -381,7 +366,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredGraduated.Key,
@@ -418,7 +402,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredVolume.Key,
@@ -453,7 +436,7 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 			},
 		)
 		s.NoError(err)
-		s.Len(pendingLines.Lines, 6)
+		s.Len(pendingLines.Lines, 5)
 	})
 
 	clock.FreezeTime(periodEnd.Add(time.Minute))
@@ -523,7 +506,21 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 		expectedPeriodStartUnix := periodStart.Truncate(streaming.MinimumWindowSizeDuration).Unix()
 		expectedPeriodEndUnix := periodEnd.Truncate(streaming.MinimumWindowSizeDuration).Unix()
 
-		getLine := func(description string) *billing.Line {
+		getParentOfDetailedLine := func(detailedLine billing.DetailedLine) *billing.Line {
+			for _, line := range invoice.Lines.OrEmpty() {
+				_, found := lo.Find(line.DetailedLines, func(dl billing.DetailedLine) bool {
+					return dl.ID == detailedLine.ID
+				})
+
+				if found {
+					return line
+				}
+			}
+
+			return nil
+		}
+
+		getLine := func(description string) *billing.DetailedLine {
 			for _, line := range invoice.GetLeafLinesWithConsolidatedTaxBehavior() {
 				name := line.Name
 				if line.Description != nil {
@@ -531,7 +528,7 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 				}
 
 				if name == description {
-					return line
+					return &line
 				}
 			}
 
@@ -556,7 +553,7 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 				return id
 			}
 
-			for _, discount := range line.Discounts.Amount {
+			for _, discount := range line.AmountDiscounts {
 				if lo.FromPtr(discount.Description) != "" && group[0][2] == lo.FromPtr(discount.Description) {
 					return discount.GetID()
 				}
@@ -566,19 +563,6 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 		}
 
 		expectedInvoiceAddLines := []*stripe.InvoiceItemParams{
-			{
-				Amount:      lo.ToPtr(int64(10000)),
-				Description: lo.ToPtr("Fee"),
-				Customer:    lo.ToPtr(customerData.StripeCustomerID),
-				Period: &stripe.InvoiceItemPeriodParams{
-					Start: lo.ToPtr(expectedPeriodStartUnix),
-					End:   lo.ToPtr(expectedPeriodEndUnix),
-				},
-				Metadata: map[string]string{
-					"om_line_id":   getLineID("Fee"),
-					"om_line_type": "line",
-				},
-			},
 			{
 				Amount:      lo.ToPtr(int64(7725)),
 				Description: lo.ToPtr("UBP - AI Usecase: usage in period (103,000,025 x $0.000001)"),
@@ -774,7 +758,7 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 		s.NoError(err)
 
 		// Remove a line item.
-		lineToRemove := getLine("Fee")
+		lineToRemove := getLine("UBP - FLAT per any usage")
 		s.NotNil(lineToRemove, "line ID to remove is not found")
 
 		// Find the stripe line ID to remove.
@@ -790,12 +774,23 @@ func (s *StripeInvoiceTestSuite) TestComplexInvoice() {
 
 		s.NotEmpty(stripeLineIDToRemove, "stripe line ID to remove is empty")
 
-		ok = updateInvoice.Lines.RemoveByID(lineToRemove.ID)
+		parentLine := getParentOfDetailedLine(*lineToRemove)
+		s.NotNil(parentLine, "parent line is not found")
+
+		ok = updateInvoice.Lines.RemoveByID(parentLine.ID)
 		s.True(ok, "failed to remove line item")
 
 		// To simulate the update, we will update the external ID of the invoice.
 		// Which will go into update path of the upsert invoice.
 		updateInvoice.ExternalIDs.Invoicing = "stripe-invoice-id"
+
+		// We call a list invoice line items first to compare the updated lines to the existing lines.
+		// This is used to determine which lines to add, remove or update.
+		s.StripeAppClient.
+			On("ListInvoiceLineItems", stripeInvoice.ID).
+			Once().
+			// We return the existing lines before the update.
+			Return(stripeInvoice.Lines.Data, nil)
 
 		stripeInvoiceUpdated := &stripe.Invoice{
 			ID:       stripeInvoice.ID,
@@ -1060,7 +1055,7 @@ func (s *StripeInvoiceTestSuite) TestEmptyInvoiceGenerationZeroUsage() {
 		CustomerMutate: customer.CustomerMutate{
 			Name:     "Test Customer",
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test"},
 			},
 		},
@@ -1123,7 +1118,6 @@ func (s *StripeInvoiceTestSuite) TestEmptyInvoiceGenerationZeroUsage() {
 						Period:    billing.Period{Start: periodStart, End: periodEnd},
 						InvoiceAt: periodEnd,
 						ManagedBy: billing.ManuallyManagedLine,
-						Type:      billing.InvoiceLineTypeUsageBased,
 					},
 					UsageBased: &billing.UsageBasedLine{
 						FeatureKey: flatPerUnitFeature.Key,
@@ -1185,6 +1179,11 @@ func (s *StripeInvoiceTestSuite) TestEmptyInvoiceGenerationZeroUsage() {
 
 	// Editing the invoice should also work
 	s.StripeAppClient.
+		On("ListInvoiceLineItems", "stripe-invoice-id").
+		Once().
+		Return([]*stripe.InvoiceLineItem{}, nil)
+
+	s.StripeAppClient.
 		On("UpdateInvoice", stripeclient.UpdateInvoiceInput{
 			AutomaticTaxEnabled: true,
 			StripeInvoiceID:     invoice.ExternalIDs.Invoicing,
@@ -1234,7 +1233,7 @@ func (s *StripeInvoiceTestSuite) TestSendInvoice() {
 		CustomerMutate: customer.CustomerMutate{
 			Name:     "Test Customer",
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test"},
 			},
 		},
@@ -1295,7 +1294,7 @@ func (s *StripeInvoiceTestSuite) TestSendInvoice() {
 			Customer: customerEntity.GetID(),
 			Currency: currencyx.Code(currency.USD),
 			Lines: []*billing.Line{
-				billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+				billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 					Period:        billing.Period{Start: periodStart, End: periodEnd},
 					InvoiceAt:     periodStart,
 					Name:          "Flat fee",

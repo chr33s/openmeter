@@ -12,8 +12,7 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db/entitlement"
-	"github.com/openmeterio/openmeter/openmeter/ent/db/feature"
-	"github.com/openmeterio/openmeter/openmeter/ent/db/subject"
+	dbfeature "github.com/openmeterio/openmeter/openmeter/ent/db/feature"
 	"github.com/openmeterio/openmeter/pkg/datetime"
 	"github.com/openmeterio/openmeter/pkg/models"
 )
@@ -45,10 +44,6 @@ type Entitlement struct {
 	FeatureKey string `json:"feature_key,omitempty"`
 	// CustomerID holds the value of the "customer_id" field.
 	CustomerID string `json:"customer_id,omitempty"`
-	// SubjectID holds the value of the "subject_id" field.
-	SubjectID string `json:"subject_id,omitempty"`
-	// SubjectKey holds the value of the "subject_key" field.
-	SubjectKey string `json:"subject_key,omitempty"`
 	// MeasureUsageFrom holds the value of the "measure_usage_from" field.
 	MeasureUsageFrom *time.Time `json:"measure_usage_from,omitempty"`
 	// IssueAfterReset holds the value of the "issue_after_reset" field.
@@ -60,7 +55,7 @@ type Entitlement struct {
 	// PreserveOverageAtReset holds the value of the "preserve_overage_at_reset" field.
 	PreserveOverageAtReset *bool `json:"preserve_overage_at_reset,omitempty"`
 	// Config holds the value of the "config" field.
-	Config []uint8 `json:"config,omitempty"`
+	Config *string `json:"config,omitempty"`
 	// UsagePeriodInterval holds the value of the "usage_period_interval" field.
 	UsagePeriodInterval *datetime.ISODurationString `json:"usage_period_interval,omitempty"`
 	// Historically this field had been overwritten with each anchor reset, now we keep the original anchor time and the value is populated from the last reset which is queried dynamically
@@ -91,11 +86,9 @@ type EntitlementEdges struct {
 	Feature *Feature `json:"feature,omitempty"`
 	// Customer holds the value of the customer edge.
 	Customer *Customer `json:"customer,omitempty"`
-	// Subject holds the value of the subject edge.
-	Subject *Subject `json:"subject,omitempty"`
 	// loadedTypes holds the information for reporting if a
 	// type was loaded (or requested) in eager-loading or not.
-	loadedTypes [7]bool
+	loadedTypes [6]bool
 }
 
 // UsageResetOrErr returns the UsageReset value or an error if the edge
@@ -140,7 +133,7 @@ func (e EntitlementEdges) FeatureOrErr() (*Feature, error) {
 	if e.Feature != nil {
 		return e.Feature, nil
 	} else if e.loadedTypes[4] {
-		return nil, &NotFoundError{label: feature.Label}
+		return nil, &NotFoundError{label: dbfeature.Label}
 	}
 	return nil, &NotLoadedError{edge: "feature"}
 }
@@ -156,23 +149,12 @@ func (e EntitlementEdges) CustomerOrErr() (*Customer, error) {
 	return nil, &NotLoadedError{edge: "customer"}
 }
 
-// SubjectOrErr returns the Subject value or an error if the edge
-// was not loaded in eager-loading, or loaded but was not found.
-func (e EntitlementEdges) SubjectOrErr() (*Subject, error) {
-	if e.Subject != nil {
-		return e.Subject, nil
-	} else if e.loadedTypes[6] {
-		return nil, &NotFoundError{label: subject.Label}
-	}
-	return nil, &NotLoadedError{edge: "subject"}
-}
-
 // scanValues returns the types for scanning values from sql.Rows.
 func (*Entitlement) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case entitlement.FieldMetadata, entitlement.FieldConfig:
+		case entitlement.FieldMetadata:
 			values[i] = new([]byte)
 		case entitlement.FieldIsSoftLimit, entitlement.FieldPreserveOverageAtReset:
 			values[i] = new(sql.NullBool)
@@ -180,7 +162,7 @@ func (*Entitlement) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullFloat64)
 		case entitlement.FieldIssueAfterResetPriority:
 			values[i] = new(sql.NullInt64)
-		case entitlement.FieldID, entitlement.FieldNamespace, entitlement.FieldEntitlementType, entitlement.FieldFeatureID, entitlement.FieldFeatureKey, entitlement.FieldCustomerID, entitlement.FieldSubjectID, entitlement.FieldSubjectKey, entitlement.FieldUsagePeriodInterval:
+		case entitlement.FieldID, entitlement.FieldNamespace, entitlement.FieldEntitlementType, entitlement.FieldFeatureID, entitlement.FieldFeatureKey, entitlement.FieldCustomerID, entitlement.FieldConfig, entitlement.FieldUsagePeriodInterval:
 			values[i] = new(sql.NullString)
 		case entitlement.FieldCreatedAt, entitlement.FieldUpdatedAt, entitlement.FieldDeletedAt, entitlement.FieldActiveFrom, entitlement.FieldActiveTo, entitlement.FieldMeasureUsageFrom, entitlement.FieldUsagePeriodAnchor, entitlement.FieldCurrentUsagePeriodStart, entitlement.FieldCurrentUsagePeriodEnd:
 			values[i] = new(sql.NullTime)
@@ -278,18 +260,6 @@ func (_m *Entitlement) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.CustomerID = value.String
 			}
-		case entitlement.FieldSubjectID:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field subject_id", values[i])
-			} else if value.Valid {
-				_m.SubjectID = value.String
-			}
-		case entitlement.FieldSubjectKey:
-			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field subject_key", values[i])
-			} else if value.Valid {
-				_m.SubjectKey = value.String
-			}
 		case entitlement.FieldMeasureUsageFrom:
 			if value, ok := values[i].(*sql.NullTime); !ok {
 				return fmt.Errorf("unexpected type %T for field measure_usage_from", values[i])
@@ -326,12 +296,11 @@ func (_m *Entitlement) assignValues(columns []string, values []any) error {
 				*_m.PreserveOverageAtReset = value.Bool
 			}
 		case entitlement.FieldConfig:
-			if value, ok := values[i].(*[]byte); !ok {
+			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field config", values[i])
-			} else if value != nil && len(*value) > 0 {
-				if err := json.Unmarshal(*value, &_m.Config); err != nil {
-					return fmt.Errorf("unmarshal field config: %w", err)
-				}
+			} else if value.Valid {
+				_m.Config = new(string)
+				*_m.Config = value.String
 			}
 		case entitlement.FieldUsagePeriodInterval:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -410,11 +379,6 @@ func (_m *Entitlement) QueryCustomer() *CustomerQuery {
 	return NewEntitlementClient(_m.config).QueryCustomer(_m)
 }
 
-// QuerySubject queries the "subject" edge of the Entitlement entity.
-func (_m *Entitlement) QuerySubject() *SubjectQuery {
-	return NewEntitlementClient(_m.config).QuerySubject(_m)
-}
-
 // Update returns a builder for updating this Entitlement.
 // Note that you need to call Entitlement.Unwrap() before calling this method if this Entitlement
 // was returned from a transaction, and the transaction was committed or rolled back.
@@ -477,12 +441,6 @@ func (_m *Entitlement) String() string {
 	builder.WriteString("customer_id=")
 	builder.WriteString(_m.CustomerID)
 	builder.WriteString(", ")
-	builder.WriteString("subject_id=")
-	builder.WriteString(_m.SubjectID)
-	builder.WriteString(", ")
-	builder.WriteString("subject_key=")
-	builder.WriteString(_m.SubjectKey)
-	builder.WriteString(", ")
 	if v := _m.MeasureUsageFrom; v != nil {
 		builder.WriteString("measure_usage_from=")
 		builder.WriteString(v.Format(time.ANSIC))
@@ -508,8 +466,10 @@ func (_m *Entitlement) String() string {
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")
-	builder.WriteString("config=")
-	builder.WriteString(fmt.Sprintf("%v", _m.Config))
+	if v := _m.Config; v != nil {
+		builder.WriteString("config=")
+		builder.WriteString(*v)
+	}
 	builder.WriteString(", ")
 	if v := _m.UsagePeriodInterval; v != nil {
 		builder.WriteString("usage_period_interval=")

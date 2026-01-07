@@ -33,6 +33,8 @@ type Config struct {
 	AsyncInsert         bool
 	AsyncInsertWait     bool
 	InsertQuerySettings map[string]string
+	MeterQuerySettings  map[string]string
+	EnablePrewhere      bool
 	ProgressManager     progressmanager.Service
 	SkipCreateTables    bool
 }
@@ -154,6 +156,8 @@ func (c *Connector) QueryMeter(ctx context.Context, namespace string, meter mete
 		GroupBy:         groupBy,
 		WindowSize:      params.WindowSize,
 		WindowTimeZone:  params.WindowTimeZone,
+		QuerySettings:   c.config.MeterQuerySettings,
+		EnablePrewhere:  c.config.EnablePrewhere,
 	}
 
 	// Load cached rows if any
@@ -205,6 +209,23 @@ func (c *Connector) ListSubjects(ctx context.Context, params streaming.ListSubje
 	}
 
 	return subjects, nil
+}
+
+func (c *Connector) ListGroupByValues(ctx context.Context, params streaming.ListGroupByValuesParams) ([]string, error) {
+	if err := params.Validate(); err != nil {
+		return nil, fmt.Errorf("validate params: %w", err)
+	}
+
+	groupByValues, err := c.listGroupByValues(ctx, params)
+	if err != nil {
+		if meterpkg.IsMeterNotFoundError(err) {
+			return nil, err
+		}
+
+		return nil, fmt.Errorf("list group by values: %w", err)
+	}
+
+	return groupByValues, nil
 }
 
 func (c *Connector) CreateNamespace(ctx context.Context, namespace string) error {
@@ -543,6 +564,45 @@ func (c *Connector) listSubjects(ctx context.Context, params streaming.ListSubje
 	}
 
 	return subjects, nil
+}
+
+// listGroupByValues lists the group by values that have events in the database
+func (c *Connector) listGroupByValues(ctx context.Context, params streaming.ListGroupByValuesParams) ([]string, error) {
+	query := listGroupByValuesQuery{
+		Database:        c.config.Database,
+		EventsTableName: c.config.EventsTableName,
+		Namespace:       params.Namespace,
+		Meter:           params.Meter,
+		GroupByKey:      params.GroupByKey,
+		From:            params.From,
+		To:              params.To,
+		Search:          params.Search,
+	}
+
+	sql, args := query.toSQL()
+
+	rows, err := c.config.ClickHouse.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list group by values: %w", err)
+	}
+
+	defer rows.Close()
+
+	groupByValues := []string{}
+	for rows.Next() {
+		var groupByValue string
+		if err = rows.Scan(&groupByValue); err != nil {
+			return nil, err
+		}
+
+		groupByValues = append(groupByValues, groupByValue)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows error: %w", err)
+	}
+
+	return groupByValues, nil
 }
 
 // withProgressContext wraps the context with a progress tracking

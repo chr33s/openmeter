@@ -45,7 +45,7 @@ func TestInvoicing(t *testing.T) {
 
 func (s *InvoicingTestSuite) TestPendingLineCreation() {
 	namespace := "ns-create-invoice-workflow"
-	now := time.Now().Truncate(time.Microsecond).In(time.UTC)
+	now := time.Now().Truncate(time.Second).In(time.UTC)
 	periodEnd := now.Add(-time.Hour)
 	periodStart := periodEnd.Add(-time.Hour * 24 * 30)
 	issueAt := now.Add(-time.Minute)
@@ -73,7 +73,7 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 				PhoneNumber: lo.ToPtr("1234567890"),
 			},
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test-subject-1", "test-subject-2"},
 			},
 		},
@@ -185,8 +185,6 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 
 							InvoiceAt: issueAt,
 							ManagedBy: billing.ManuallyManagedLine,
-
-							Type: billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							Price: productcatalog.NewPriceFrom(productcatalog.TieredPrice{
@@ -249,11 +247,7 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 				InvoiceAt: issueAt.In(time.UTC),
 				ManagedBy: billing.ManuallyManagedLine,
 
-				Type: billing.InvoiceLineTypeFee,
-
 				Currency: currencyx.Code(currency.USD),
-
-				Status: billing.InvoiceLineStatusValid,
 
 				Metadata: map[string]string{
 					"key": "value",
@@ -263,12 +257,12 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 					"float_key":  1.0,
 				},
 			},
-			FlatFee: &billing.FlatFeeLine{
-				ConfigID:      usdInvoiceLine.FlatFee.ConfigID,
-				PerUnitAmount: alpacadecimal.NewFromFloat(100),
-				Quantity:      alpacadecimal.NewFromFloat(1),
-				Category:      billing.FlatFeeCategoryRegular,
-				PaymentTerm:   productcatalog.InAdvancePaymentTerm,
+			UsageBased: &billing.UsageBasedLine{
+				ConfigID: usdInvoiceLine.UsageBased.ConfigID,
+				Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+					Amount:      alpacadecimal.NewFromFloat(100),
+					PaymentTerm: productcatalog.InAdvancePaymentTerm,
+				}),
 			},
 		}
 		// Let's make sure that the workflow config is cloned
@@ -281,7 +275,7 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 				Number:   "GATHER-TECU-USD-1",
 				Currency: currencyx.Code(currency.USD),
 				Status:   billing.InvoiceStatusGathering,
-				Period:   &billing.Period{Start: periodStart.Truncate(time.Microsecond), End: periodEnd.Truncate(time.Microsecond)},
+				Period:   &billing.Period{Start: periodStart.Truncate(time.Second), End: periodEnd.Truncate(time.Second)},
 
 				CreatedAt: usdInvoice.CreatedAt,
 				UpdatedAt: usdInvoice.UpdatedAt,
@@ -303,7 +297,9 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 					// Usage attribution fields
 					Key:        customerEntity.Key,
 					CustomerID: customerEntity.ID,
-					UsageAttribution: billing.CustomerUsageAttribution{
+					UsageAttribution: &streaming.CustomerUsageAttribution{
+						ID:          customerEntity.ID,
+						Key:         customerEntity.Key,
 						SubjectKeys: customerEntity.UsageAttribution.SubjectKeys,
 					},
 
@@ -321,7 +317,7 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 
 		s.NoError(invoicecalc.GatheringInvoiceCollectionAt(&expectedInvoice))
 
-		require.Equal(s.T(),
+		ExpectJSONEqual(s.T(),
 			expectedInvoice.RemoveMetaForCompare(),
 			usdInvoice.RemoveMetaForCompare())
 
@@ -360,14 +356,18 @@ func (s *InvoicingTestSuite) TestPendingLineCreation() {
 		// Then we have two line items for the invoice
 		require.Len(s.T(), hufInvoiceLines, 2)
 
-		_, found := lo.Find(hufInvoiceLines, func(l *billing.Line) bool {
-			return l.Type == billing.InvoiceLineTypeFee
+		lineItem, found := lo.Find(hufInvoiceLines, func(l *billing.Line) bool {
+			return l.UsageBased.Price.Type() == productcatalog.FlatPriceType
 		})
 		require.True(s.T(), found, "manual fee item is present")
+		require.Equal(s.T(), lineItem.UsageBased.Price, productcatalog.NewPriceFrom(productcatalog.FlatPrice{
+			Amount:      alpacadecimal.NewFromFloat(200),
+			PaymentTerm: productcatalog.InAdvancePaymentTerm,
+		}))
 
 		// Then we should have the tiered price present
 		tieredLine, found := lo.Find(hufInvoiceLines, func(l *billing.Line) bool {
-			return l.Type == billing.InvoiceLineTypeUsageBased
+			return l.UsageBased.FeatureKey == "test"
 		})
 
 		require.True(s.T(), found, "tiered price item is present")
@@ -444,6 +444,7 @@ func (s *InvoicingTestSuite) TestCreateInvoice() {
 
 		CustomerMutate: customer.CustomerMutate{
 			Name:         "Test Customer",
+			Key:          lo.ToPtr("test-customer"),
 			PrimaryEmail: lo.ToPtr("test@test.com"),
 			BillingAddress: &models.Address{
 				Country: lo.ToPtr(models.CountryCode("US")),
@@ -639,30 +640,21 @@ func (s *InvoicingTestSuite) TestCreateInvoice() {
 				Customer: customerEntity.GetID(),
 				Currency: currencyx.Code(currency.USD),
 				Lines: []*billing.Line{
-					{
-						LineBase: billing.LineBase{
-							ManagedResource: models.NewManagedResource(models.ManagedResourceInput{
-								Name:      "Test item1",
-								Namespace: namespace,
-							}),
-							Period: billing.Period{Start: periodStart, End: periodEnd},
+					billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
+						Name:      "Test item1",
+						Namespace: namespace,
+						Period:    billing.Period{Start: periodStart, End: periodEnd},
 
-							InvoiceAt: line1IssueAt,
+						InvoiceAt: line1IssueAt,
 
-							Type:      billing.InvoiceLineTypeFee,
-							ManagedBy: billing.ManuallyManagedLine,
+						ManagedBy: billing.ManuallyManagedLine,
 
-							Metadata: map[string]string{
-								"key": "value",
-							},
+						Metadata: map[string]string{
+							"key": "value",
 						},
-						FlatFee: &billing.FlatFeeLine{
-							PerUnitAmount: alpacadecimal.NewFromFloat(100),
-							Quantity:      alpacadecimal.NewFromFloat(1),
-							Category:      billing.FlatFeeCategoryRegular,
-							PaymentTerm:   productcatalog.InAdvancePaymentTerm,
-						},
-					},
+						PerUnitAmount: alpacadecimal.NewFromFloat(100),
+						PaymentTerm:   productcatalog.InAdvancePaymentTerm,
+					}),
 				},
 			})
 
@@ -854,6 +846,7 @@ func (s *InvoicingTestSuite) TestInvoicingFlow() {
 
 				CustomerMutate: customer.CustomerMutate{
 					Name:         "Test Customer",
+					Key:          lo.ToPtr("test-customer"),
 					PrimaryEmail: lo.ToPtr("test@test.com"),
 					BillingAddress: &models.Address{
 						Country: lo.ToPtr(models.CountryCode("US")),
@@ -892,6 +885,124 @@ func (s *InvoicingTestSuite) TestInvoicingFlow() {
 			require.Equal(s.T(), tc.expectedState, resultingInvoice.Status)
 		})
 	}
+}
+
+func (s *InvoicingTestSuite) TestPaymentProcessingEnteredAt() {
+	ctx := context.Background()
+	namespace := s.GetUniqueNamespace("ns-payment-processing-entered-at")
+
+	sandboxApp := s.InstallSandboxApp(s.T(), namespace)
+
+	clockBase := testutils.GetRFC3339Time(s.T(), "2024-11-27T10:00:00Z")
+	clock.SetTime(clockBase)
+	defer clock.ResetTime()
+
+	// Use the sandbox mock to disable automatic payment simulation so we can drive the
+	// state machine manually and assert the timestamp semantics in a deterministic way.
+	mockApp := s.SandboxApp.EnableMock(s.T())
+	mockApp.OnValidateInvoice(nil)
+	mockApp.OnFinalizeInvoice(billing.NewFinalizeInvoiceResult())
+	defer s.SandboxApp.DisableMock()
+
+	customerEntity, err := s.CustomerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: namespace,
+
+		CustomerMutate: customer.CustomerMutate{
+			Name:         "Test Customer",
+			Key:          lo.ToPtr("test-customer"),
+			PrimaryEmail: lo.ToPtr("test@example.com"),
+			BillingAddress: &models.Address{
+				Country: lo.ToPtr(models.CountryCode("US")),
+			},
+			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(customerEntity)
+
+	s.ProvisionBillingProfile(ctx, namespace, sandboxApp.GetID())
+
+	invoice := s.CreateDraftInvoice(s.T(), ctx, DraftInvoiceInput{
+		Namespace: namespace,
+		Customer:  customerEntity,
+	})
+
+	invoice, err = s.BillingService.ApproveInvoice(ctx, invoice.InvoiceID())
+	s.Require().NoError(err)
+
+	s.Require().Equal(billing.InvoiceStatusPaymentProcessingPending, invoice.Status)
+	s.Require().NotNil(invoice.PaymentProcessingEnteredAt)
+	s.WithinDuration(clockBase, invoice.PaymentProcessingEnteredAt.UTC(), time.Second)
+
+	// Reload to be sure the timestamp persisted and isn’t recalculated on read.
+	reloadedInvoice, err := s.BillingService.GetInvoiceByID(ctx, billing.GetInvoiceByIdInput{
+		Invoice: invoice.InvoiceID(),
+	})
+	s.Require().NoError(err)
+	s.Require().Equal(billing.InvoiceStatusPaymentProcessingPending, reloadedInvoice.Status)
+	s.Require().NotNil(reloadedInvoice.PaymentProcessingEnteredAt)
+	s.WithinDuration(invoice.PaymentProcessingEnteredAt.UTC(), reloadedInvoice.PaymentProcessingEnteredAt.UTC(), time.Second)
+}
+
+func (s *InvoicingTestSuite) TestStatusDetailsSimulationDoesNotMutatePaymentProcessingTimestamp() {
+	ctx := context.Background()
+	namespace := s.GetUniqueNamespace("ns-status-details-pp-entered-at")
+
+	sandboxApp := s.InstallSandboxApp(s.T(), namespace)
+
+	customerEntity, err := s.CustomerService.CreateCustomer(ctx, customer.CreateCustomerInput{
+		Namespace: namespace,
+
+		CustomerMutate: customer.CustomerMutate{
+			Name:         "Test Customer",
+			Key:          lo.ToPtr("test-customer"),
+			PrimaryEmail: lo.ToPtr("status-details@example.com"),
+			BillingAddress: &models.Address{
+				Country: lo.ToPtr(models.CountryCode("US")),
+			},
+			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
+		},
+	})
+	s.Require().NoError(err)
+	s.Require().NotNil(customerEntity)
+
+	s.ProvisionBillingProfile(ctx, namespace, sandboxApp.GetID(), WithBillingProfileEditFn(func(profile *billing.CreateProfileInput) {
+		profile.WorkflowConfig = billing.WorkflowConfig{
+			Collection: billing.CollectionConfig{
+				Alignment: billing.AlignmentKindSubscription,
+			},
+			Invoicing: billing.InvoicingConfig{
+				AutoAdvance: false,
+				DraftPeriod: lo.Must(datetime.ISODurationString("PT0S").Parse()),
+				DueAfter:    lo.Must(datetime.ISODurationString("P1W").Parse()),
+			},
+			Payment: billing.PaymentConfig{
+				CollectionMethod: billing.CollectionMethodChargeAutomatically,
+			},
+		}
+	}))
+
+	invoice := s.CreateDraftInvoice(s.T(), ctx, DraftInvoiceInput{
+		Namespace: namespace,
+		Customer:  customerEntity,
+	})
+
+	s.Require().Equal(billing.InvoiceStatusDraftManualApprovalNeeded, invoice.Status)
+	s.Require().Nil(invoice.PaymentProcessingEnteredAt)
+
+	reloadedInvoice, err := s.BillingService.GetInvoiceByID(ctx, billing.GetInvoiceByIdInput{
+		Invoice: invoice.InvoiceID(),
+		Expand:  billing.InvoiceExpandAll,
+	})
+	s.Require().NoError(err)
+
+	s.Require().Equal(billing.InvoiceStatusDraftManualApprovalNeeded, reloadedInvoice.Status)
+
+	approveAction := reloadedInvoice.StatusDetails.AvailableActions.Approve
+	s.Require().NotNil(approveAction)
+	s.Require().Equal(billing.InvoiceStatusPaymentProcessingPending, approveAction.ResultingState)
+
+	s.Require().Nil(reloadedInvoice.PaymentProcessingEnteredAt)
 }
 
 type ValidationIssueIntrospector interface {
@@ -1208,6 +1319,7 @@ func (s *InvoicingTestSuite) TestInvoicingFlowErrorHandling() {
 
 				CustomerMutate: customer.CustomerMutate{
 					Name:         "Test Customer",
+					Key:          lo.ToPtr("test-customer"),
 					PrimaryEmail: lo.ToPtr("test@test.com"),
 					BillingAddress: &models.Address{
 						Country: lo.ToPtr(models.CountryCode("US")),
@@ -1421,7 +1533,6 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.flatPerUnit.Key,
@@ -1441,7 +1552,6 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
@@ -1459,7 +1569,6 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredGraduated.Key,
@@ -1495,7 +1604,6 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredVolume.Key,
@@ -1661,7 +1769,7 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 		requireTotals(s.T(), expectedTotals{
 			Amount: 1000,
 			Total:  1000,
-		}, flatPerUnit.Children[0].Totals)
+		}, flatPerUnit.DetailedLines[0].Totals)
 
 		requireTotals(s.T(), expectedTotals{
 			Amount: 1000,
@@ -1867,18 +1975,19 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 
 		mockApp.OnValidateInvoice(nil)
 		mockApp.OnUpsertInvoice(func(i billing.Invoice) (*billing.UpsertInvoiceResult, error) {
-			lines := i.FlattenLinesByID()
-
 			out := billing.NewUpsertInvoiceResult()
 
-			for _, line := range lines {
+			for _, line := range i.Lines.OrEmpty() {
 				if line.ID == "" {
 					return nil, fmt.Errorf("line id is empty")
 				}
 
-				if line.Type == billing.InvoiceLineTypeFee {
-					// We set the external id the same as the line id to make it easier to test the output.
-					out.AddLineExternalID(line.ID, line.ID)
+				for _, detailedLine := range line.DetailedLines {
+					if detailedLine.ID == "" {
+						return nil, fmt.Errorf("detailed line id is empty")
+					}
+
+					out.AddLineExternalID(detailedLine.ID, detailedLine.ID)
 				}
 			}
 
@@ -1996,14 +2105,11 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 
 		require.Equal(s.T(), "INV-123", out[0].Number)
 
-		for _, line := range out[0].FlattenLinesByID() {
-			switch line.Type {
-			case billing.InvoiceLineTypeFee:
-				require.Equal(s.T(), line.ID, line.ExternalIDs.Invoicing)
-			case billing.InvoiceLineTypeUsageBased:
-				require.Empty(s.T(), line.ExternalIDs.Invoicing)
-			default:
-				s.T().Errorf("unexpected line type: %s", line.Type)
+		for _, line := range out[0].Lines.OrEmpty() {
+			s.Empty(line.ExternalIDs.Invoicing, "line external id should be empty")
+
+			for _, detailedLine := range line.DetailedLines {
+				s.Equal(detailedLine.ID, detailedLine.ExternalIDs.Invoicing, "detailed line external id should be the same as the line id")
 			}
 		}
 
@@ -2011,21 +2117,15 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 
 		s.Run("validate invoice finalization", func() {
 			mockApp.OnUpsertInvoice(func(i billing.Invoice) (*billing.UpsertInvoiceResult, error) {
-				lines := i.FlattenLinesByID()
-
 				out := billing.NewUpsertInvoiceResult()
 
-				for _, line := range lines {
-					if line.Type == billing.InvoiceLineTypeFee {
-						out.AddLineExternalID(line.ID, "final_upsert_"+line.ID)
-					}
+				for _, line := range i.Lines.OrEmpty() {
+					for _, detailedLine := range line.DetailedLines {
+						out.AddLineExternalID(detailedLine.ID, "final_upsert_"+detailedLine.ID)
 
-					for _, discount := range line.Discounts.Amount {
-						out.AddLineDiscountExternalID(discount.GetID(), "final_upsert_"+discount.GetID())
-					}
-
-					for _, discount := range line.Discounts.Usage {
-						out.AddLineDiscountExternalID(discount.GetID(), "final_upsert_"+discount.GetID())
+						for _, discount := range detailedLine.AmountDiscounts {
+							out.AddLineDiscountExternalID(discount.GetID(), "final_upsert_"+discount.GetID())
+						}
 					}
 				}
 
@@ -2043,23 +2143,15 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 
 			require.Equal(s.T(), "payment_external_id", finalizedInvoice.ExternalIDs.Payment)
 			// Invoice app testing
-			for _, line := range finalizedInvoice.FlattenLinesByID() {
-				switch line.Type {
-				case billing.InvoiceLineTypeFee:
-					require.Equal(s.T(), "final_upsert_"+line.ID, line.ExternalIDs.Invoicing)
-				case billing.InvoiceLineTypeUsageBased:
-					require.Empty(s.T(), line.ExternalIDs.Invoicing)
-				default:
-					s.T().Errorf("unexpected line type: %s", line.Type)
-				}
+			for _, line := range finalizedInvoice.Lines.OrEmpty() {
+				s.Empty(line.ExternalIDs.Invoicing, "line external id should be empty")
+				for _, detailedLine := range line.DetailedLines {
+					require.Equal(s.T(), "final_upsert_"+detailedLine.ID, detailedLine.ExternalIDs.Invoicing)
 
-				// Test discounts
-				for _, discount := range line.Discounts.Amount {
-					require.Equal(s.T(), "final_upsert_"+discount.ID, discount.ExternalIDs.Invoicing)
-				}
-
-				for _, discount := range line.Discounts.Usage {
-					require.Equal(s.T(), "final_upsert_"+discount.ID, discount.ExternalIDs.Invoicing)
+					// Test discounts
+					for _, discount := range detailedLine.AmountDiscounts {
+						require.Equal(s.T(), "final_upsert_"+discount.ID, discount.ExternalIDs.Invoicing)
+					}
 				}
 			}
 
@@ -2073,23 +2165,15 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 
 		mockApp.OnValidateInvoice(nil)
 		mockApp.OnUpsertInvoice(func(i billing.Invoice) (*billing.UpsertInvoiceResult, error) {
-			lines := i.FlattenLinesByID()
-
 			out := billing.NewUpsertInvoiceResult()
 
-			for _, line := range lines {
-				if line.Type == billing.InvoiceLineTypeFee {
-					// We set the external id the same as the line id to make it easier to test the output.
-					out.AddLineExternalID(line.ID, line.ID)
-				}
+			for _, line := range i.Lines.OrEmpty() {
+				for _, detailedLine := range line.DetailedLines {
+					out.AddLineExternalID(detailedLine.ID, "final_upsert_"+detailedLine.ID)
 
-				// We set the external id the same as the discount id to make it easier to test the output.
-				for _, discount := range line.Discounts.Amount {
-					out.AddLineDiscountExternalID(discount.GetID(), "final_upsert_"+discount.GetID())
-				}
-
-				for _, discount := range line.Discounts.Usage {
-					out.AddLineDiscountExternalID(discount.GetID(), "final_upsert_"+discount.GetID())
+					for _, discount := range detailedLine.AmountDiscounts {
+						out.AddLineDiscountExternalID(discount.GetID(), "final_upsert_"+discount.GetID())
+					}
 				}
 			}
 
@@ -2178,23 +2262,14 @@ func (s *InvoicingTestSuite) TestUBPProgressiveInvoicing() {
 
 		require.Equal(s.T(), "INV-124", out[0].Number)
 
-		for _, line := range out[0].FlattenLinesByID() {
-			switch line.Type {
-			case billing.InvoiceLineTypeFee:
-				require.Equal(s.T(), line.ID, line.ExternalIDs.Invoicing)
-			case billing.InvoiceLineTypeUsageBased:
-				require.Empty(s.T(), line.ExternalIDs.Invoicing)
-			default:
-				s.T().Errorf("unexpected line type: %s", line.Type)
-			}
+		for _, line := range out[0].Lines.OrEmpty() {
+			s.Empty(line.ExternalIDs.Invoicing, "line external id should be empty")
+			for _, detailedLine := range line.DetailedLines {
+				require.Equal(s.T(), "final_upsert_"+detailedLine.ID, detailedLine.ExternalIDs.Invoicing)
 
-			// Test discounts
-			for _, discount := range line.Discounts.Amount {
-				require.Equal(s.T(), "final_upsert_"+discount.ID, discount.ExternalIDs.Invoicing)
-			}
-
-			for _, discount := range line.Discounts.Usage {
-				require.Equal(s.T(), "final_upsert_"+discount.ID, discount.ExternalIDs.Invoicing)
+				for _, discount := range detailedLine.AmountDiscounts {
+					require.Equal(s.T(), "final_upsert_"+discount.ID, discount.ExternalIDs.Invoicing)
+				}
 			}
 		}
 
@@ -2350,7 +2425,6 @@ func (s *InvoicingTestSuite) TestUBPGraduatingFlatFeeTier1() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredGraduated.Key,
@@ -2421,8 +2495,8 @@ func (s *InvoicingTestSuite) TestUBPGraduatingFlatFeeTier1() {
 
 		// Let's validate the output of the split itself
 		// Other line is a zero usage line
-		s.Len(tieredGraduated.Children, 2)
-		flatFeeLine := tieredGraduated.Children.GetByChildUniqueReferenceID("graduated-tiered-1-flat-price")
+		s.Len(tieredGraduated.DetailedLines, 2)
+		flatFeeLine := tieredGraduated.DetailedLines.GetByChildUniqueReferenceID("graduated-tiered-1-flat-price")
 		require.NotNil(s.T(), flatFeeLine)
 
 		requireTotals(s.T(), expectedTotals{
@@ -2457,8 +2531,8 @@ func (s *InvoicingTestSuite) TestUBPGraduatingFlatFeeTier1() {
 		}, tieredGraduated.Totals)
 
 		// Let's validate the output of the split itself
-		s.Len(tieredGraduated.Children, 1)
-		usageBasedEmptyLine := tieredGraduated.Children.GetByChildUniqueReferenceID("graduated-tiered-1-price-usage")
+		s.Len(tieredGraduated.DetailedLines, 1)
+		usageBasedEmptyLine := tieredGraduated.DetailedLines.GetByChildUniqueReferenceID("graduated-tiered-1-price-usage")
 		require.NotNil(s.T(), usageBasedEmptyLine)
 
 		requireTotals(s.T(), expectedTotals{
@@ -2637,7 +2711,7 @@ func (s *InvoicingTestSuite) TestUBPNonProgressiveInvoicing() {
 				PhoneNumber: lo.ToPtr("1234567890"),
 			},
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test-subject-1"},
 			},
 		},
@@ -2665,7 +2739,6 @@ func (s *InvoicingTestSuite) TestUBPNonProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.flatPerUnit.Key,
@@ -2685,7 +2758,6 @@ func (s *InvoicingTestSuite) TestUBPNonProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							Price: productcatalog.NewPriceFrom(productcatalog.FlatPrice{
@@ -2703,7 +2775,6 @@ func (s *InvoicingTestSuite) TestUBPNonProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredGraduated.Key,
@@ -2739,7 +2810,6 @@ func (s *InvoicingTestSuite) TestUBPNonProgressiveInvoicing() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: features.tieredVolume.Key,
@@ -3021,17 +3091,16 @@ type feeLineExpect struct {
 	Quantity        float64
 	PerUnitAmount   float64
 	AmountDiscounts map[string]float64
-	UsageDiscounts  map[string]float64
 }
 
 func requireDetailedLines(t *testing.T, line *billing.Line, expectations lineExpectations) {
 	t.Helper()
 	require.NotNil(t, line)
-	children := line.Children
+	detailedLines := line.DetailedLines
 
-	require.Len(t, children, len(expectations.Details))
+	require.Len(t, detailedLines, len(expectations.Details))
 
-	detailsById := lo.GroupBy(children, func(l *billing.Line) string {
+	detailsById := lo.GroupBy(detailedLines, func(l billing.DetailedLine) string {
 		return *l.ChildUniqueReferenceID
 	})
 
@@ -3039,30 +3108,19 @@ func requireDetailedLines(t *testing.T, line *billing.Line, expectations lineExp
 		require.Contains(t, detailsById, key, "detail %s should be present", key)
 		detail := detailsById[key][0]
 
-		require.Equal(t, detail.Type, billing.InvoiceLineTypeFee, "line type should be fee")
-		require.Equal(t, expect.Quantity, detail.FlatFee.Quantity.InexactFloat64(), "quantity should match")
-		require.Equal(t, expect.PerUnitAmount, detail.FlatFee.PerUnitAmount.InexactFloat64(), "per unit amount should match")
+		require.Equal(t, expect.Quantity, detail.Quantity.InexactFloat64(), "quantity should match")
+		require.Equal(t, expect.PerUnitAmount, detail.PerUnitAmount.InexactFloat64(), "per unit amount should match")
 
-		discounts := detail.Discounts
-		require.Len(t, discounts.Amount, len(expect.AmountDiscounts), "amount discounts should match")
-		require.Len(t, discounts.Usage, len(expect.UsageDiscounts), "usage discounts should match")
+		discounts := detail.AmountDiscounts
+		require.Len(t, discounts, len(expect.AmountDiscounts), "amount discounts should match")
 
-		amountDiscountsById := lo.GroupBy(discounts.Amount, func(d billing.AmountLineDiscountManaged) string {
-			return lo.FromPtr(d.ChildUniqueReferenceID)
-		})
-
-		usageDiscountsById := lo.GroupBy(discounts.Usage, func(d billing.UsageLineDiscountManaged) string {
+		amountDiscountsById := lo.GroupBy(discounts, func(d billing.AmountLineDiscountManaged) string {
 			return lo.FromPtr(d.ChildUniqueReferenceID)
 		})
 
 		for discountType, discountExpect := range expect.AmountDiscounts {
 			require.Contains(t, amountDiscountsById, discountType, "discount %s should be present", discountType)
 			require.Equal(t, discountExpect, amountDiscountsById[discountType][0].Amount.InexactFloat64(), "discount amount should match")
-		}
-
-		for discountType, discountExpect := range expect.UsageDiscounts {
-			require.Contains(t, usageDiscountsById, discountType, "discount %s should be present", discountType)
-			require.Equal(t, discountExpect, usageDiscountsById[discountType][0].Quantity.InexactFloat64(), "discount amount should match")
 		}
 	}
 }
@@ -3165,7 +3223,7 @@ func (s *InvoicingTestSuite) TestGatheringInvoiceRecalculation() {
 				Country: lo.ToPtr(models.CountryCode("US")),
 			},
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test-subject-1"},
 			},
 		},
@@ -3192,7 +3250,6 @@ func (s *InvoicingTestSuite) TestGatheringInvoiceRecalculation() {
 							Period:    billing.Period{Start: periodStart, End: periodEnd},
 							InvoiceAt: periodEnd,
 							ManagedBy: billing.ManuallyManagedLine,
-							Type:      billing.InvoiceLineTypeUsageBased,
 						},
 						UsageBased: &billing.UsageBasedLine{
 							FeatureKey: flatPerUnitFeature.Key,
@@ -3334,7 +3391,7 @@ func (s *InvoicingTestSuite) TestEmptyInvoiceGenerationZeroUsage() {
 		CustomerMutate: customer.CustomerMutate{
 			Name:     "Test Customer",
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test-subject-1"},
 			},
 		},
@@ -3360,7 +3417,6 @@ func (s *InvoicingTestSuite) TestEmptyInvoiceGenerationZeroUsage() {
 						Period:    billing.Period{Start: periodStart, End: periodEnd},
 						InvoiceAt: periodEnd,
 						ManagedBy: billing.ManuallyManagedLine,
-						Type:      billing.InvoiceLineTypeUsageBased,
 					},
 					UsageBased: &billing.UsageBasedLine{
 						FeatureKey: flatPerUnitFeature.Key,
@@ -3455,7 +3511,7 @@ func (s *InvoicingTestSuite) TestEmptyInvoiceGenerationZeroPrice() {
 		CustomerMutate: customer.CustomerMutate{
 			Name:     "Test Customer",
 			Currency: lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test-subject-1"},
 			},
 		},
@@ -3481,7 +3537,6 @@ func (s *InvoicingTestSuite) TestEmptyInvoiceGenerationZeroPrice() {
 						Period:    billing.Period{Start: periodStart, End: periodEnd},
 						InvoiceAt: periodEnd,
 						ManagedBy: billing.ManuallyManagedLine,
-						Type:      billing.InvoiceLineTypeUsageBased,
 					},
 					UsageBased: &billing.UsageBasedLine{
 						FeatureKey: flatPerUnitFeature.Key,
@@ -3515,10 +3570,10 @@ func (s *InvoicingTestSuite) TestEmptyInvoiceGenerationZeroPrice() {
 	s.Equal(float64(10), line.UsageBased.Quantity.InexactFloat64())
 
 	// And there should be a detailed line with 0 total
-	s.Len(line.Children, 1)
-	detailedLine := line.Children[0]
+	s.Len(line.DetailedLines, 1)
+	detailedLine := line.DetailedLines[0]
 	s.Equal(float64(0), detailedLine.Totals.Total.InexactFloat64())
-	s.Equal(float64(10), detailedLine.FlatFee.Quantity.InexactFloat64())
+	s.Equal(float64(10), detailedLine.Quantity.InexactFloat64())
 
 	s.Len(invoice.ValidationIssues, 0)
 }
@@ -3638,7 +3693,6 @@ func (s *InvoicingTestSuite) TestProgressiveBillLate() {
 					Period:    billing.Period{Start: periodStart, End: periodEnd},
 					InvoiceAt: periodEnd,
 					ManagedBy: billing.ManuallyManagedLine,
-					Type:      billing.InvoiceLineTypeUsageBased,
 				},
 				UsageBased: &billing.UsageBasedLine{
 					FeatureKey: apiRequestsTotalFeature.Feature.Key,
@@ -3734,7 +3788,6 @@ func (s *InvoicingTestSuite) TestProgressiveBillingOverride() {
 					Period:    billing.Period{Start: periodStart, End: periodEnd},
 					InvoiceAt: periodEnd,
 					ManagedBy: billing.ManuallyManagedLine,
-					Type:      billing.InvoiceLineTypeUsageBased,
 				},
 				UsageBased: &billing.UsageBasedLine{
 					FeatureKey: apiRequestsTotalFeature.Feature.Key,
@@ -3767,7 +3820,6 @@ func (s *InvoicingTestSuite) TestProgressiveBillingOverride() {
 					Period:    billing.Period{Start: periodStart, End: periodStart.Add(24 * time.Hour)},
 					InvoiceAt: periodStart.Add(24 * time.Hour),
 					ManagedBy: billing.ManuallyManagedLine,
-					Type:      billing.InvoiceLineTypeUsageBased,
 				},
 				UsageBased: &billing.UsageBasedLine{
 					FeatureKey: apiRequestsTotalFeature.Feature.Key,
@@ -3848,7 +3900,6 @@ func (s *InvoicingTestSuite) TestSortLines() {
 					Period:    billing.Period{Start: periodStart, End: periodEnd},
 					InvoiceAt: periodEnd,
 					ManagedBy: billing.ManuallyManagedLine,
-					Type:      billing.InvoiceLineTypeUsageBased,
 				},
 				UsageBased: &billing.UsageBasedLine{
 					FeatureKey: apiRequestsTotalFeature.Feature.Key,
@@ -3913,13 +3964,13 @@ func (s *InvoicingTestSuite) TestSortLines() {
 		// Let's shuffle the lines (ULIDs usually provide a consistent order that's why we are shuffling it a few times)
 		lines := invoice.Lines.OrEmpty()
 
-		detailedLines := lines[0].Children
+		detailedLines := lines[0].DetailedLines
 
 		rand.Shuffle(len(detailedLines), func(i, j int) {
 			detailedLines[i], detailedLines[j] = detailedLines[j], detailedLines[i]
 		})
 
-		lines[0].Children = billing.NewLineChildren(detailedLines)
+		lines[0].DetailedLines = detailedLines
 
 		invoice.Lines = billing.NewInvoiceLines(lines)
 
@@ -3934,17 +3985,16 @@ func (s *InvoicingTestSuite) TestSortLines() {
 		s.Equal(line.Name, "UBP - volume")
 		s.True(line.Period.Equal(billing.Period{Start: periodStart, End: periodEnd}), "periods should equal")
 
-		children := line.Children
-		s.Len(children, 4)
+		s.Len(line.DetailedLines, 4)
 
 		// There should be 4 children properly indexed
-		for idx, child := range children {
-			s.NotNil(child.FlatFee.Index)
-			s.Equal(idx, *child.FlatFee.Index)
+		for idx, child := range line.DetailedLines {
+			s.NotNil(child.Index)
+			s.Equal(idx, *child.Index)
 		}
 
 		// Let's mandate that the last child is the commitment
-		s.Equal(billing.FlatFeeCategoryCommitment, children[3].FlatFee.Category)
+		s.Equal(billing.FlatFeeCategoryCommitment, line.DetailedLines[3].Category)
 	}
 }
 
@@ -3971,7 +4021,7 @@ func (s *InvoicingTestSuite) TestGatheringInvoicePeriodPersisting() {
 		Customer: customer.GetID(),
 		Currency: currencyx.Code(currency.USD),
 		Lines: []*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+			billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 				Period:    billing.Period{Start: periodStart, End: periodEnd},
 				InvoiceAt: periodStart,
 				Name:      "Flat fee",
@@ -4003,7 +4053,7 @@ func (s *InvoicingTestSuite) TestGatheringInvoicePeriodPersisting() {
 		Customer: customer.GetID(),
 		Currency: currencyx.Code(currency.USD),
 		Lines: []*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+			billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 				Period:    billing.Period{Start: newPeriodStart, End: newPeriodEnd},
 				InvoiceAt: newPeriodStart,
 				Name:      "Flat fee",
@@ -4082,7 +4132,7 @@ func (s *InvoicingTestSuite) TestCreatePendingInvoiceLinesForDeletedCustomers() 
 		Customer: customer.GetID(),
 		Currency: currencyx.Code(currency.USD),
 		Lines: []*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+			billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 				Period:    billing.Period{Start: periodStart, End: periodEnd},
 				InvoiceAt: periodStart,
 				Name:      "Flat fee",
@@ -4119,7 +4169,7 @@ func (s *InvoicingTestSuite) TestCreatePendingInvoiceLinesForDeletedCustomers() 
 		Customer: customer.GetID(),
 		Currency: currencyx.Code(currency.USD),
 		Lines: []*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(billing.NewFlatFeeLineInput{
+			billing.NewFlatFeeLine(billing.NewFlatFeeLineInput{
 				Period:    billing.Period{Start: clock.Now(), End: clock.Now().Add(time.Hour * 24)},
 				InvoiceAt: clock.Now(),
 				Name:      "Flat fee",

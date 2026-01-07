@@ -6,15 +6,18 @@ import (
 	"fmt"
 
 	"github.com/openmeterio/openmeter/openmeter/billing"
+	"github.com/openmeterio/openmeter/pkg/models"
 )
 
-func PayloadToMapInterface(t any) (map[string]interface{}, error) {
+type RawPayload map[string]any
+
+func AsRawPayload(t any) (RawPayload, error) {
 	b, err := json.Marshal(t)
 	if err != nil {
 		return nil, err
 	}
 
-	var m map[string]interface{}
+	var m RawPayload
 	if err = json.Unmarshal(b, &m); err != nil {
 		return nil, err
 	}
@@ -46,31 +49,23 @@ func (p EventPayload) Validate() error {
 	switch p.Type {
 	case EventTypeBalanceThreshold:
 		if p.BalanceThreshold == nil {
-			return ValidationError{
-				Err: errors.New("missing balance threshold payload"),
-			}
+			return models.NewGenericValidationError(errors.New("missing balance threshold payload"))
 		}
 
 		return p.BalanceThreshold.Validate()
 	case EventTypeEntitlementReset:
 		if p.EntitlementReset == nil {
-			return ValidationError{
-				Err: errors.New("missing entitlement reset payload"),
-			}
+			return models.NewGenericValidationError(errors.New("missing entitlement reset payload"))
 		}
 
 		return p.EntitlementReset.Validate()
 	case EventTypeInvoiceCreated, EventTypeInvoiceUpdated:
 		if p.Invoice == nil {
-			return ValidationError{
-				Err: errors.New("missing invoice payload"),
-			}
+			return models.NewGenericValidationError(errors.New("missing invoice payload"))
 		}
 
 		return p.Invoice.Validate()
 	default:
-		return ValidationError{
-			Err: fmt.Errorf("invalid event type: %s", p.Type),
-		}
+		return models.NewGenericValidationError(fmt.Errorf("invalid event type: %s", p.Type))
 	}
 }

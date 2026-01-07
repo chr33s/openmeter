@@ -5,7 +5,10 @@ import (
 	"slices"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/openmeterio/openmeter/openmeter/meter"
+	"github.com/openmeterio/openmeter/pkg/filter"
 	"github.com/openmeterio/openmeter/pkg/models"
 )
 
@@ -15,7 +18,7 @@ type QueryParams struct {
 	To             *time.Time
 	FilterCustomer []Customer
 	FilterSubject  []string
-	FilterGroupBy  map[string][]string
+	FilterGroupBy  map[string]filter.FilterString
 	GroupBy        []string
 	WindowSize     *meter.WindowSize
 	WindowTimeZone *time.Location
@@ -57,38 +60,22 @@ func (p *QueryParams) Validate() error {
 		errs = append(errs, errors.New("customer filter is required with customer_id group by"))
 	}
 
+	if err := errors.Join(lo.Map(p.FilterCustomer, func(c Customer, _ int) error {
+		return c.GetUsageAttribution().Validate()
+	})...); err != nil {
+		errs = append(errs, err)
+	}
+
+	// Validate the group by filters
+	for _, filter := range p.FilterGroupBy {
+		if err := filter.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
 	if len(errs) > 0 {
 		return models.NewNillableGenericValidationError(errors.Join(errs...))
 	}
 
 	return nil
-}
-
-// Customer is a customer that can be used in a meter query
-type Customer interface {
-	GetUsageAttribution() CustomerUsageAttribution
-}
-
-// CustomerUsageAttribution holds customer fields that map usage to a customer
-type CustomerUsageAttribution struct {
-	ID          string
-	Key         *string
-	SubjectKeys []string
-}
-
-// GetValues returns the values by which the usage is attributed to the customer
-func (ua CustomerUsageAttribution) GetValues() []string {
-	attributions := []string{}
-
-	if ua.Key != nil {
-		attributions = append(attributions, *ua.Key)
-	}
-
-	attributions = append(attributions, ua.SubjectKeys...)
-
-	return attributions
-}
-
-func (ua CustomerUsageAttribution) Equal(other CustomerUsageAttribution) bool {
-	return ua.ID == other.ID && ua.Key == other.Key && slices.Equal(ua.SubjectKeys, other.SubjectKeys)
 }

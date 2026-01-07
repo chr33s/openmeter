@@ -12,7 +12,7 @@ import "../entitlements/main.tsp";
 
 using TypeSpec.OpenAPI;
 
-namespace OpenMeter.ProductCatalog;
+namespace OpenMeter;
 
 /**
  * Expanded subscription
@@ -63,6 +63,13 @@ model SubscriptionAlignment {
 model Subscription {
   ...global.Resource;
   ...global.CadencedResource;
+
+  /**
+   * Set of key-value pairs managed by the system. Cannot be modified by user.
+   */
+  @visibility(Lifecycle.Read)
+  @summary("Annotations")
+  annotations?: Annotations;
 
   /**
    * Alignment configuration for the plan.
@@ -284,12 +291,12 @@ model SubscriptionItemIncluded {
   /**
    * The feature the customer is entitled to use.
    */
-  feature: Entitlements.Feature;
+  feature: Feature;
 
   /**
    * The entitlement of the Subscription Item.
    */
-  entitlement?: Entitlements.Entitlement;
+  entitlement?: Entitlement;
 }
 
 /**

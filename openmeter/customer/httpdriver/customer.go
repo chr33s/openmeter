@@ -25,13 +25,9 @@ import (
 type (
 	ListCustomersResponse = pagination.Result[api.Customer]
 	ListCustomersParams   = api.ListCustomersParams
+	ListCustomersRequest  = customer.ListCustomersInput
 	ListCustomersHandler  httptransport.HandlerWithArgs[ListCustomersRequest, ListCustomersResponse, ListCustomersParams]
 )
-
-type ListCustomersRequest struct {
-	customer.ListCustomersInput
-	Expand []api.CustomerExpand
-}
 
 // ListCustomers returns a handler for listing customers.
 func (h *handler) ListCustomers() ListCustomersHandler {
@@ -43,32 +39,33 @@ func (h *handler) ListCustomers() ListCustomersHandler {
 			}
 
 			req := ListCustomersRequest{
-				ListCustomersInput: customer.ListCustomersInput{
-					Namespace: ns,
+				Namespace: ns,
 
-					// Pagination
-					Page: pagination.Page{
-						PageSize:   lo.FromPtrOr(params.PageSize, customer.DefaultPageSize),
-						PageNumber: lo.FromPtrOr(params.Page, customer.DefaultPageNumber),
-					},
-
-					// Order
-					OrderBy: defaultx.WithDefault(params.OrderBy, api.CustomerOrderByName),
-					Order:   sortx.Order(defaultx.WithDefault(params.Order, api.SortOrderASC)),
-
-					// Filters
-					Key:          params.Key,
-					Name:         params.Name,
-					PrimaryEmail: params.PrimaryEmail,
-					Subject:      params.Subject,
-					PlanKey:      params.PlanKey,
-
-					// Modifiers
-					IncludeDeleted: lo.FromPtrOr(params.IncludeDeleted, customer.IncludeDeleted),
+				// Pagination
+				Page: pagination.Page{
+					PageSize:   lo.FromPtrOr(params.PageSize, customer.DefaultPageSize),
+					PageNumber: lo.FromPtrOr(params.Page, customer.DefaultPageNumber),
 				},
 
+				// Order
+				OrderBy: string(defaultx.WithDefault(params.OrderBy, api.CustomerOrderByName)),
+				Order:   sortx.Order(defaultx.WithDefault(params.Order, api.SortOrderASC)),
+
+				// Filters
+				Key:          params.Key,
+				Name:         params.Name,
+				PrimaryEmail: params.PrimaryEmail,
+				Subject:      params.Subject,
+				PlanKey:      params.PlanKey,
+
+				// Modifiers
+				IncludeDeleted: lo.FromPtrOr(params.IncludeDeleted, customer.IncludeDeleted),
+
 				// Expand
-				Expand: lo.FromPtrOr(params.Expand, []api.CustomerExpand{}),
+				// TODO[v2]: disable expand of subscriptions by default, for now this is a breaking change
+				Expands: lo.Map(lo.FromPtrOr(params.Expand, api.QueryCustomerListExpand{api.CustomerExpandSubscriptions}), func(item api.CustomerExpand, _ int) customer.Expand {
+					return customer.Expand(item)
+				}),
 			}
 
 			if err := req.Page.Validate(); err != nil {
@@ -78,7 +75,7 @@ func (h *handler) ListCustomers() ListCustomersHandler {
 			return req, nil
 		},
 		func(ctx context.Context, request ListCustomersRequest) (ListCustomersResponse, error) {
-			resp, err := h.service.ListCustomers(ctx, request.ListCustomersInput)
+			resp, err := h.service.ListCustomers(ctx, request)
 			if err != nil {
 				return ListCustomersResponse{}, fmt.Errorf("failed to list customers: %w", err)
 			}
@@ -92,9 +89,9 @@ func (h *handler) ListCustomers() ListCustomersHandler {
 				})
 
 				subscriptions, err := h.subscriptionService.List(ctx, subscription.ListSubscriptionsInput{
-					Namespaces: []string{request.Namespace},
-					Customers:  customerIDs,
-					ActiveAt:   lo.ToPtr(time.Now()),
+					Namespaces:  []string{request.Namespace},
+					CustomerIDs: customerIDs,
+					ActiveAt:    lo.ToPtr(time.Now()),
 				})
 				if err != nil {
 					return ListCustomersResponse{}, err
@@ -114,7 +111,7 @@ func (h *handler) ListCustomers() ListCustomersHandler {
 					subs = []subscription.Subscription{}
 				}
 
-				item, err = CustomerToAPI(customer, subs, request.Expand)
+				item, err = CustomerToAPI(customer, subs, request.Expands)
 				if err != nil {
 					return item, fmt.Errorf("failed to cast customer customer: %w", err)
 				}
@@ -178,7 +175,11 @@ func (h *handler) CreateCustomer() CreateCustomerHandler {
 }
 
 type (
-	UpdateCustomerRequest  = customer.UpdateCustomerInput
+	UpdateCustomerRequest struct {
+		Namespace       string
+		CustomerIDOrKey string
+		CustomerMutate  customer.CustomerMutate
+	}
 	UpdateCustomerResponse = api.Customer
 	UpdateCustomerHandler  httptransport.HandlerWithArgs[UpdateCustomerRequest, UpdateCustomerResponse, string]
 )
@@ -197,34 +198,38 @@ func (h *handler) UpdateCustomer() UpdateCustomerHandler {
 				return UpdateCustomerRequest{}, err
 			}
 
-			// TODO: we should not allow key identifier for mutable operations
-			// Get the customer
-			cus, err := h.service.GetCustomer(ctx, customer.GetCustomerInput{
-				CustomerIDOrKey: &customer.CustomerIDOrKey{
-					IDOrKey:   customerIDOrKey,
-					Namespace: ns,
-				},
-			})
-			if err != nil {
-				return UpdateCustomerRequest{}, err
-			}
-
-			if cus != nil && cus.IsDeleted() {
-				return UpdateCustomerRequest{},
-					models.NewGenericPreConditionFailedError(
-						fmt.Errorf("customer is deleted [namespace=%s customer.id=%s]", cus.Namespace, cus.ID),
-					)
-			}
-
 			req := UpdateCustomerRequest{
-				CustomerID:     cus.GetID(),
-				CustomerMutate: MapCustomerReplaceUpdate(body),
+				Namespace:       ns,
+				CustomerIDOrKey: customerIDOrKey,
+				CustomerMutate:  MapCustomerReplaceUpdate(body),
 			}
 
 			return req, nil
 		},
 		func(ctx context.Context, request UpdateCustomerRequest) (UpdateCustomerResponse, error) {
-			customer, err := h.service.UpdateCustomer(ctx, request)
+			// TODO: we should not allow key identifier for mutable operations
+			// Get the customer
+			cus, err := h.service.GetCustomer(ctx, customer.GetCustomerInput{
+				CustomerIDOrKey: &customer.CustomerIDOrKey{
+					IDOrKey:   request.CustomerIDOrKey,
+					Namespace: request.Namespace,
+				},
+			})
+			if err != nil {
+				return UpdateCustomerResponse{}, err
+			}
+
+			if cus != nil && cus.IsDeleted() {
+				return UpdateCustomerResponse{},
+					models.NewGenericPreConditionFailedError(
+						fmt.Errorf("customer is deleted [namespace=%s customer.id=%s]", cus.Namespace, cus.ID),
+					)
+			}
+
+			customer, err := h.service.UpdateCustomer(ctx, customer.UpdateCustomerInput{
+				CustomerID:     cus.GetID(),
+				CustomerMutate: request.CustomerMutate,
+			})
 			if err != nil {
 				return UpdateCustomerResponse{}, err
 			}
@@ -244,7 +249,10 @@ func (h *handler) UpdateCustomer() UpdateCustomerHandler {
 }
 
 type (
-	DeleteCustomerRequest  = customer.DeleteCustomerInput
+	DeleteCustomerRequest struct {
+		Namespace       string
+		CustomerIDOrKey string
+	}
 	DeleteCustomerResponse = interface{}
 	DeleteCustomerHandler  httptransport.HandlerWithArgs[DeleteCustomerRequest, DeleteCustomerResponse, string]
 )
@@ -258,12 +266,18 @@ func (h *handler) DeleteCustomer() DeleteCustomerHandler {
 				return DeleteCustomerRequest{}, err
 			}
 
+			return DeleteCustomerRequest{
+				Namespace:       ns,
+				CustomerIDOrKey: customerIDOrKey,
+			}, nil
+		},
+		func(ctx context.Context, request DeleteCustomerRequest) (DeleteCustomerResponse, error) {
 			// TODO: we should not allow key identifier for mutable operations
 			// Get the customer
 			cus, err := h.service.GetCustomer(ctx, customer.GetCustomerInput{
 				CustomerIDOrKey: &customer.CustomerIDOrKey{
-					IDOrKey:   customerIDOrKey,
-					Namespace: ns,
+					IDOrKey:   request.CustomerIDOrKey,
+					Namespace: request.Namespace,
 				},
 			})
 			if err != nil {
@@ -277,10 +291,7 @@ func (h *handler) DeleteCustomer() DeleteCustomerHandler {
 					)
 			}
 
-			return cus.GetID(), nil
-		},
-		func(ctx context.Context, request DeleteCustomerRequest) (DeleteCustomerResponse, error) {
-			err := h.service.DeleteCustomer(ctx, request)
+			err = h.service.DeleteCustomer(ctx, cus.GetID())
 			if err != nil {
 				return nil, err
 			}
@@ -320,9 +331,9 @@ func (h *handler) GetCustomer() GetCustomerHandler {
 					Namespace: ns,
 					IDOrKey:   params.CustomerIDOrKey,
 				},
-
-				// Expand
-				Expand: lo.FromPtrOr(params.Expand, []api.CustomerExpand{}),
+				Expands: lo.Map(lo.FromPtrOr(params.Expand, api.QueryCustomerListExpand{api.CustomerExpandSubscriptions}), func(item api.CustomerExpand, _ int) customer.Expand {
+					return customer.Expand(item)
+				}),
 			}, nil
 		},
 		func(ctx context.Context, request GetCustomerRequest) (GetCustomerResponse, error) {
@@ -336,7 +347,7 @@ func (h *handler) GetCustomer() GetCustomerHandler {
 				return GetCustomerResponse{}, fmt.Errorf("failed to get customer")
 			}
 
-			return h.mapCustomerWithSubscriptionsToAPI(ctx, *cus, request.Expand)
+			return h.mapCustomerWithSubscriptionsToAPI(ctx, *cus, request.Expands)
 		},
 		commonhttp.JSONResponseEncoderWithStatus[GetCustomerResponse](http.StatusOK),
 		httptransport.AppendOptions(
@@ -472,17 +483,21 @@ func (h *handler) GetCustomerAccess() GetCustomerAccessHandler {
 }
 
 // mapCustomerWithSubscriptionsToAPI maps a customer to the API with its subscriptions.
-func (h *handler) mapCustomerWithSubscriptionsToAPI(ctx context.Context, customer customer.Customer, expand []api.CustomerExpand) (api.Customer, error) {
+func (h *handler) mapCustomerWithSubscriptionsToAPI(ctx context.Context, cust customer.Customer, expand []customer.Expand) (api.Customer, error) {
+	if !lo.Contains(expand, customer.ExpandSubscriptions) {
+		return CustomerToAPI(cust, []subscription.Subscription{}, expand)
+	}
+
 	// Get the customer's subscriptions
 	subscriptions, err := h.subscriptionService.List(ctx, subscription.ListSubscriptionsInput{
-		Namespaces: []string{customer.Namespace},
-		Customers:  []string{customer.ID},
-		ActiveAt:   lo.ToPtr(time.Now()),
+		Namespaces:  []string{cust.Namespace},
+		CustomerIDs: []string{cust.ID},
+		ActiveAt:    lo.ToPtr(time.Now()),
 	})
 	if err != nil {
 		return GetCustomerResponse{}, err
 	}
 
 	// Map the customer to the API
-	return CustomerToAPI(customer, subscriptions.Items, expand)
+	return CustomerToAPI(cust, subscriptions.Items, expand)
 }

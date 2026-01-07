@@ -73,6 +73,9 @@ type ListMetersParams struct {
 
 	// IncludeDeleted is a flag to include deleted meters in the list.
 	IncludeDeleted bool
+
+	// Filter by event types
+	EventTypes *[]string
 }
 
 // Validate validates the list meters parameters.
@@ -95,13 +98,29 @@ func (p ListMetersParams) Validate() error {
 		for _, slug := range *p.SlugFilter {
 			if slug == "" {
 				errs = append(errs, errors.New("slug filter must not contain empty string"))
-				break
+			}
+		}
+	}
+
+	if p.EventTypes != nil {
+		for _, eventType := range *p.EventTypes {
+			if eventType == "" {
+				errs = append(errs, errors.New("event type filter must not contain empty string"))
 			}
 		}
 	}
 
 	return errors.Join(errs...)
 }
+
+type inputOptions struct {
+	AllowReservedEventTypes bool
+}
+
+var (
+	_ models.Validator                         = (*CreateMeterInput)(nil)
+	_ models.CustomValidator[CreateMeterInput] = (*CreateMeterInput)(nil)
+)
 
 // CreateMeterInput is a parameter object for creating a meter.
 type CreateMeterInput struct {
@@ -114,6 +133,14 @@ type CreateMeterInput struct {
 	EventFrom     *time.Time
 	ValueProperty *string
 	GroupBy       map[string]string
+	Metadata      models.Metadata
+	Annotations   models.Annotations
+
+	inputOptions
+}
+
+func (i CreateMeterInput) ValidateWith(validators ...models.ValidatorFunc[CreateMeterInput]) error {
+	return models.Validate(i, validators...)
 }
 
 // Validate validates the create meter input.
@@ -158,7 +185,7 @@ func (i CreateMeterInput) Validate() error {
 		errs = append(errs, fmt.Errorf("invalid meter group by: %w", err))
 	}
 
-	return errors.Join(errs...)
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
 }
 
 // UpdateMeterInput is a parameter object for creating a meter.
@@ -167,6 +194,10 @@ type UpdateMeterInput struct {
 	Name        string
 	Description *string
 	GroupBy     map[string]string
+	Metadata    models.Metadata
+	Annotations *models.Annotations
+
+	inputOptions
 }
 
 // Validate validates the create meter input.
@@ -197,6 +228,8 @@ func (i UpdateMeterInput) Validate(valueProperty *string) error {
 type DeleteMeterInput struct {
 	Namespace string
 	IDOrSlug  string
+
+	inputOptions
 }
 
 // Validate validates the delete meter input.

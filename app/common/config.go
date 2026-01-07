@@ -32,18 +32,22 @@ var Config = wire.NewSet(
 	wire.FieldsOf(new(config.KafkaIngestConfiguration), "KafkaConfiguration"),
 	wire.FieldsOf(new(config.Configuration), "Ingest"),
 	wire.FieldsOf(new(config.IngestConfiguration), "Kafka"),
-	wire.FieldsOf(new(config.KafkaIngestConfiguration), "TopicProvisionerConfig"),
+	wire.FieldsOf(new(config.KafkaIngestConfiguration), "TopicProvisioner"),
 	// Namespace
 	wire.FieldsOf(new(config.Configuration), "Namespace"),
 	// Notification
 	wire.FieldsOf(new(config.Configuration), "Notification"),
 	wire.FieldsOf(new(config.NotificationConfiguration), "Webhook"),
+	// Subscription
+	wire.FieldsOf(new(config.ProductCatalogConfiguration), "Subscription"),
 	// Portal
 	wire.FieldsOf(new(config.Configuration), "Portal"),
 	// ProductCatalog
 	wire.FieldsOf(new(config.Configuration), "ProductCatalog"),
 	// ProgressManager
 	wire.FieldsOf(new(config.Configuration), "ProgressManager"),
+	// Reserved Event Types
+	wire.FieldsOf(new(config.Configuration), "ReservedEventTypes"),
 	// Svix
 	wire.FieldsOf(new(config.Configuration), "Svix"),
 	// Telemetry

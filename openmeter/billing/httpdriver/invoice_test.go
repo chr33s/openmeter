@@ -41,7 +41,7 @@ func (s *InvoicingTestSuite) TestGatheringInvoiceSerialization() {
 			Name:         "Test Customer",
 			PrimaryEmail: lo.ToPtr("test@test.com"),
 			Currency:     lo.ToPtr(currencyx.Code(currency.USD)),
-			UsageAttribution: customer.CustomerUsageAttribution{
+			UsageAttribution: &customer.CustomerUsageAttribution{
 				SubjectKeys: []string{"test"},
 			},
 		},
@@ -56,7 +56,7 @@ func (s *InvoicingTestSuite) TestGatheringInvoiceSerialization() {
 		Customer: cust.GetID(),
 		Currency: currencyx.Code(currency.USD),
 		Lines: []*billing.Line{
-			billing.NewUsageBasedFlatFeeLine(
+			billing.NewFlatFeeLine(
 				billing.NewFlatFeeLineInput{
 					Namespace:     namespace,
 					Period:        billing.Period{Start: now, End: now.Add(time.Hour * 24)},

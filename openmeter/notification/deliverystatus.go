@@ -1,8 +1,9 @@
 package notification
 
 import (
-	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/openmeterio/openmeter/pkg/models"
@@ -10,22 +11,31 @@ import (
 )
 
 const (
-	EventDeliveryStatusStateSuccess EventDeliveryStatusState = "SUCCESS"
-	EventDeliveryStatusStateFailed  EventDeliveryStatusState = "FAILED"
-	EventDeliveryStatusStateSending EventDeliveryStatusState = "SENDING"
-	EventDeliveryStatusStatePending EventDeliveryStatusState = "PENDING"
+	EventDeliveryStatusStateSuccess   EventDeliveryStatusState = "SUCCESS"
+	EventDeliveryStatusStateFailed    EventDeliveryStatusState = "FAILED"
+	EventDeliveryStatusStateSending   EventDeliveryStatusState = "SENDING"
+	EventDeliveryStatusStatePending   EventDeliveryStatusState = "PENDING"
+	EventDeliveryStatusStateResending EventDeliveryStatusState = "RESENDING"
+)
+
+var (
+	_ fmt.Stringer     = (*EventDeliveryStatusState)(nil)
+	_ models.Validator = (*EventDeliveryStatusState)(nil)
 )
 
 type EventDeliveryStatusState string
 
+func (e EventDeliveryStatusState) String() string {
+	return string(e)
+}
+
 func (e EventDeliveryStatusState) Validate() error {
 	switch e {
-	case EventDeliveryStatusStateSuccess, EventDeliveryStatusStateFailed, EventDeliveryStatusStateSending, EventDeliveryStatusStatePending:
+	case EventDeliveryStatusStateSuccess, EventDeliveryStatusStateFailed,
+		EventDeliveryStatusStateSending, EventDeliveryStatusStatePending, EventDeliveryStatusStateResending:
 		return nil
 	default:
-		return ValidationError{
-			Err: fmt.Errorf("invalid event delivery status state: %s", e),
-		}
+		return models.NewGenericValidationError(fmt.Errorf("invalid event delivery status state: %s", e))
 	}
 }
 
@@ -35,25 +45,52 @@ func (e EventDeliveryStatusState) Values() []string {
 		string(EventDeliveryStatusStateFailed),
 		string(EventDeliveryStatusStateSending),
 		string(EventDeliveryStatusStatePending),
+		string(EventDeliveryStatusStateResending),
 	}
 }
 
-type EventDeliveryStatus struct {
-	models.NamespacedModel
-
-	// ID is the unique identifier for Event.
-	ID string `json:"id"`
-	// EventID defines the Event identifier the EventDeliveryStatus belongs to.
-	EventID string `json:"eventId"`
-
-	ChannelID string                   `json:"channelId"`
-	State     EventDeliveryStatusState `json:"state"`
-	Reason    string                   `json:"reason,omitempty"`
-	CreatedAt time.Time                `json:"createdAt"`
-	UpdatedAt time.Time                `json:"updatedAt,omitempty"`
+type EventDeliveryAttemptResponse struct {
+	StatusCode *int          `json:"status_code,omitempty,omitzero"`
+	Body       string        `json:"body,omitzero"`
+	Duration   time.Duration `json:"duration,omitempty,omitzero"`
+	URL        *string       `json:"url,omitempty,omitzero"`
 }
 
-var _ validator = (*ListEventsDeliveryStatusInput)(nil)
+type EventDeliveryAttempt struct {
+	State     EventDeliveryStatusState     `json:"state"`
+	Response  EventDeliveryAttemptResponse `json:"response"`
+	Timestamp time.Time                    `json:"timestamp"`
+}
+
+// SortEventDeliveryAttemptsInDescOrder sorts the EventDeliveryAttempts in descending order by timestamp.
+func SortEventDeliveryAttemptsInDescOrder(attempts []EventDeliveryAttempt) {
+	slices.SortFunc(attempts, func(a, b EventDeliveryAttempt) int {
+		return a.Timestamp.Compare(b.Timestamp) * -1
+	})
+}
+
+type EventDeliveryStatus struct {
+	models.NamespacedID
+
+	// EventID defines the Event identifier the EventDeliveryStatus belongs to.
+	EventID string
+
+	ChannelID string
+	State     EventDeliveryStatusState
+	Reason    string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
+	Attempts    []EventDeliveryAttempt
+	NextAttempt *time.Time
+
+	Annotations models.Annotations
+}
+
+var (
+	_ models.Validator                                      = (*ListEventsDeliveryStatusInput)(nil)
+	_ models.CustomValidator[ListEventsDeliveryStatusInput] = (*ListEventsDeliveryStatusInput)(nil)
+)
 
 type ListEventsDeliveryStatusInput struct {
 	pagination.Page
@@ -76,86 +113,94 @@ type ListEventsDeliveryStatusInput struct {
 	States []EventDeliveryStatusState
 }
 
-func (i ListEventsDeliveryStatusInput) Validate(_ context.Context, _ Service) error {
+func (i ListEventsDeliveryStatusInput) ValidateWith(validators ...models.ValidatorFunc[ListEventsDeliveryStatusInput]) error {
+	return models.Validate(i, validators...)
+}
+
+func (i ListEventsDeliveryStatusInput) Validate() error {
+	var errs []error
+
 	if i.From.After(i.To) {
-		return ValidationError{
-			Err: fmt.Errorf("invalid time range: parameter From (%s) is after To (%s)", i.From, i.To),
-		}
+		errs = append(errs, fmt.Errorf("invalid time range: parameter From (%s) is after To (%s)", i.From, i.To))
 	}
 
 	for _, s := range i.States {
 		if err := s.Validate(); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
-	return nil
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
 }
 
 type ListEventsDeliveryStatusResult = pagination.Result[EventDeliveryStatus]
 
-var _ validator = (*GetEventDeliveryStatusInput)(nil)
+var (
+	_ models.Validator                                    = (*GetEventDeliveryStatusInput)(nil)
+	_ models.CustomValidator[GetEventDeliveryStatusInput] = (*GetEventDeliveryStatusInput)(nil)
+)
 
 type GetEventDeliveryStatusInput struct {
-	models.NamespacedModel
+	models.NamespacedID
 
-	// ID the unique identifier of the EventDeliveryStatus.
-	ID string
 	// EventID defines the Event identifier the EventDeliveryStatus belongs to. Must be provided if ID is empty.
 	EventID string
 	// ChannelID defines the Channel identifier the EventDeliveryStatus belongs to. Must be provided if ID is empty.
 	ChannelID string
 }
 
-func (i GetEventDeliveryStatusInput) Validate(_ context.Context, _ Service) error {
+func (i GetEventDeliveryStatusInput) ValidateWith(validators ...models.ValidatorFunc[GetEventDeliveryStatusInput]) error {
+	return models.Validate(i, validators...)
+}
+
+func (i GetEventDeliveryStatusInput) Validate() error {
+	var errs []error
+
 	if i.Namespace == "" {
-		return ValidationError{
-			Err: fmt.Errorf("namespace must be provided"),
-		}
+		errs = append(errs, errors.New("namespace is required"))
 	}
 
 	if i.ID == "" && (i.EventID == "" || i.ChannelID == "") {
-		return ValidationError{
-			Err: fmt.Errorf("delivery status ID or both channel ID and event ID must be provided"),
-		}
+		errs = append(errs, fmt.Errorf("delivery status ID or both channel ID and event ID must be provided"))
 	}
 
-	return nil
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
 }
 
-var _ validator = (*UpdateEventDeliveryStatusInput)(nil)
+var (
+	_ models.Validator                                       = (*UpdateEventDeliveryStatusInput)(nil)
+	_ models.CustomValidator[UpdateEventDeliveryStatusInput] = (*UpdateEventDeliveryStatusInput)(nil)
+)
 
 type UpdateEventDeliveryStatusInput struct {
-	models.NamespacedModel
+	models.NamespacedID
 
-	// ID the unique identifier of the EventDeliveryStatus.
-	ID string
 	// State is the delivery state of the Event.
 	State EventDeliveryStatusState
 	// Reason describes the reason for the latest State transition.
 	Reason string
-	// EventID defines the Event identifier the EventDeliveryStatus belongs to. Must be provided if ID is empty.
-	EventID string
-	// ChannelID defines the Channel identifier the EventDeliveryStatus belongs to. Must be provided if ID is empty.
-	ChannelID string
+	// Annotations
+	Annotations models.Annotations
+	// NextAttempt defines the next time the Event should be attempted to be delivered.
+	NextAttempt *time.Time
+	// Attempts is a list of delivery attempts for the Event.
+	Attempts []EventDeliveryAttempt
 }
 
-func (i UpdateEventDeliveryStatusInput) Validate(_ context.Context, _ Service) error {
-	if i.Namespace == "" {
-		return ValidationError{
-			Err: fmt.Errorf("namespace must be provided"),
-		}
+func (i UpdateEventDeliveryStatusInput) ValidateWith(validators ...models.ValidatorFunc[UpdateEventDeliveryStatusInput]) error {
+	return models.Validate(i, validators...)
+}
+
+func (i UpdateEventDeliveryStatusInput) Validate() error {
+	var errs []error
+
+	if err := i.NamespacedID.Validate(); err != nil {
+		errs = append(errs, err)
 	}
 
 	if err := i.State.Validate(); err != nil {
-		return err
+		errs = append(errs, err)
 	}
 
-	if i.ID == "" && (i.EventID == "" || i.ChannelID == "") {
-		return ValidationError{
-			Err: fmt.Errorf("delivery status ID or both channel ID and event ID must be provided"),
-		}
-	}
-
-	return nil
+	return models.NewNillableGenericValidationError(errors.Join(errs...))
 }

@@ -24,10 +24,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -40,16 +42,16 @@ jobs:
           nix flake check --impure
           nix develop --impure .#ci
       - name: Save Nix store cache
-        uses: nix-community/cache-nix-action/save@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/save@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
-          save: 'true'
+          save: "true"
 
       - name: Populate go caches - go mod download
         run: nix develop --impure .#ci -c go mod download
 
       - name: Save go caches - go mod
-        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/save@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -60,10 +62,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -72,7 +76,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore Nix store
-        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: |
@@ -82,7 +86,7 @@ jobs:
             ${{ runner.os }}-openmeter-nix-build-
 
       - name: Restore go.mod cache if exists
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -110,10 +114,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -122,7 +128,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore Nix store
-        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: |
@@ -132,7 +138,7 @@ jobs:
             ${{ runner.os }}-openmeter-nix-build-
 
       - name: Restore go.mod cache if exists
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -169,7 +175,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       # Let's start docker-compose early so that by the time we have the nix env set up it's already running
       - name: Start docker-compose dependencies
@@ -177,7 +185,7 @@ jobs:
           docker compose up postgres svix redis -d
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -186,7 +194,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore Nix store
-        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: |
@@ -200,7 +208,7 @@ jobs:
 
       # This shaves off 5s or so
       - name: Restore go.mod cache if exists
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -219,7 +227,7 @@ jobs:
         env:
           SVIX_HOST: localhost
           # Dev JWT secret, non-sensitive
-          SVIX_JWT_SECRET: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3MjI5NzYyNzMsImV4cCI6MjAzODMzNjI3MywibmJmIjoxNzIyOTc2MjczLCJpc3MiOiJzdml4LXNlcnZlciIsInN1YiI6Im9yZ18yM3JiOFlkR3FNVDBxSXpwZ0d3ZFhmSGlyTXUifQ.PomP6JWRI62W5N4GtNdJm2h635Q5F54eij0J3BU-_Ds
+          SVIX_JWT_SECRET: DUMMY_JWT_SECRET
         # count=1 is needed to force retest
         run: |
           nix develop --impure .#ci -c make test-nocache
@@ -236,12 +244,13 @@ jobs:
     steps:
       # Required as a workaround for Dagger to properly detect Git metadata
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0 # Needed to compare against base branch
+          persist-credentials: false
 
       - name: Run pipeline
-        uses: dagger/dagger-for-github@710906f3073901ccd9c8fd38e18848c00d9892be # v8.1.0
+        uses: dagger/dagger-for-github@d913e70051faf3b907d4dd96ef1161083c88c644 # v8.2.0
         with:
           verb: call
           args: migrate check
@@ -255,7 +264,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Dagger Engine logs as artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always() && steps.export-dagger-engine-logs.outcome == 'success'
         with:
           name: "[${{ github.job }}] Dagger Engine logs"
@@ -270,10 +279,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -282,7 +293,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore Nix store
-        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: |
@@ -296,7 +307,7 @@ jobs:
 
       # This shaves off 5s or so
       - name: Restore go.mod cache if exists
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -324,7 +335,7 @@ jobs:
           echo "sha=${BASE_COMMIT}"
 
       - name: Lint cache
-        uses: actions/cache@v4.2.4
+        uses: actions/cache@v5.0.1
         with:
           path: .devenv/golangci-lint-cache
           key: ${{ runner.os }}-openmeter-golangci-lint-cache-${{ steps.base-commit.outputs.sha }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -369,10 +380,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@595b5aeba73380359d98a5e087f648dbb0edce1b # v4.7.3
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
 
   fossa-scan:
     name: FOSSA Scan
@@ -381,7 +394,9 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Run FOSSA Scan
         uses: fossas/fossa-action@3ebcea1862c6ffbd5cf1b4d0bd6b3fe7bd6f2cac # v1.7.0
@@ -392,11 +407,13 @@ jobs:
     name: Quickstart
     runs-on: depot-ubuntu-latest-8
     needs:
-    - artifacts
+      - artifacts
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Create override files for quickstart
         env:
@@ -420,13 +437,12 @@ jobs:
 
           cat quickstart/docker-compose.override.yaml
 
-
       - name: Launch Docker Compose
         run: docker compose -f docker-compose.yaml -f docker-compose.override.yaml up -d
         working-directory: quickstart
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -435,7 +451,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore Nix store
-        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: |
@@ -445,7 +461,7 @@ jobs:
             ${{ runner.os }}-openmeter-nix-build-
 
       - name: Restore go.mod cache if exists
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -481,11 +497,13 @@ jobs:
     runs-on: depot-ubuntu-latest-8
     # Note: This check is running against the image that is going to be pushed.
     needs:
-    - artifacts
+      - artifacts
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
 
       - name: Create override files for e2e
         env:
@@ -501,13 +519,12 @@ jobs:
 
           cat e2e/docker-compose.override.yaml
 
-
       - name: Launch Docker Compose infra
         run: docker compose -f docker-compose.infra.yaml -f docker-compose.openmeter.yaml -f docker-compose.override.yaml up -d
         working-directory: e2e
 
       - name: Set up Nix
-        uses: nixbuild/nix-quick-install-action@1f095fee853b33114486cfdeae62fa099cda35a9 # v33
+        uses: nixbuild/nix-quick-install-action@2c9db80fb984ceb1bcaa77cdda3fdf8cfba92035 # v34
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           nix_conf: |
@@ -516,7 +533,7 @@ jobs:
             keep-outputs = true
 
       - name: Restore Nix store
-        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a  # v6.1.3
+        uses: nix-community/cache-nix-action/restore@135667ec418502fa5a3598af6fb9eb733888ce6a # v6.1.3
         with:
           primary-key: ${{ runner.os }}-openmeter-nix-build-${{ github.ref_name }}-${{ hashFiles('flake.*') }}
           restore-prefixes-first-match: |
@@ -526,7 +543,7 @@ jobs:
             ${{ runner.os }}-openmeter-nix-build-
 
       - name: Restore go.mod cache if exists
-        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@9255dc7a253b0ccc959486e2bca901246202afeb # v5.0.1
         with:
           path: .devenv/state/go
           key: ${{ runner.os }}-openmeter-go-modules-${{ github.ref_name }}-${{ hashFiles('flake.*', 'go.*', '.github/workflows/*.yaml') }}
@@ -559,7 +576,7 @@ jobs:
         if: always()
 
       - name: Upload Openmeter logs as artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         if: always()
         with:
           name: "[${{ github.job }}] Openmeter logs"

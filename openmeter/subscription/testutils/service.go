@@ -1,7 +1,6 @@
 package subscriptiontestutils
 
 import (
-	"log/slog"
 	"testing"
 	"time"
 
@@ -33,12 +32,14 @@ import (
 	subscriptionaddonrepo "github.com/openmeterio/openmeter/openmeter/subscription/addon/repo"
 	subscriptionaddonservice "github.com/openmeterio/openmeter/openmeter/subscription/addon/service"
 	subscriptionentitlement "github.com/openmeterio/openmeter/openmeter/subscription/entitlement"
+	annotationhook "github.com/openmeterio/openmeter/openmeter/subscription/hooks/annotations"
 	"github.com/openmeterio/openmeter/openmeter/subscription/service"
 	subscriptionworkflow "github.com/openmeterio/openmeter/openmeter/subscription/workflow"
 	subscriptionworkflowservice "github.com/openmeterio/openmeter/openmeter/subscription/workflow/service"
 	"github.com/openmeterio/openmeter/openmeter/testutils"
 	"github.com/openmeterio/openmeter/openmeter/watermill/eventbus"
 	"github.com/openmeterio/openmeter/pkg/datetime"
+	"github.com/openmeterio/openmeter/pkg/ffx"
 	"github.com/openmeterio/openmeter/pkg/framework/lockr"
 	"github.com/openmeterio/openmeter/pkg/models"
 )
@@ -131,12 +132,6 @@ func NewService(t *testing.T, dbDeps *DBDeps) SubscriptionDependencies {
 	require.NoError(t, err)
 	customerService.RegisterHooks(subjectCustomerHook)
 
-	subjectEntitlementValidatorHook, err := subjecthooks.NewEntitlementValidatorHook(subjecthooks.EntitlementValidatorHookConfig{
-		EntitlementService: entitlementRegistry.Entitlement,
-	})
-	require.NoError(t, err)
-	subjectService.RegisterHooks(subjectEntitlementValidatorHook)
-
 	// customer hooks
 	customerSubjectHook, err := customerservicehooks.NewSubjectCustomerHook(customerservicehooks.SubjectCustomerHookConfig{
 		Customer:         customerService,
@@ -146,13 +141,6 @@ func NewService(t *testing.T, dbDeps *DBDeps) SubscriptionDependencies {
 	})
 	require.NoError(t, err)
 	subjectService.RegisterHooks(customerSubjectHook)
-
-	customerSubjectValidatorHook, err := customerservicehooks.NewSubjectValidatorHook(customerservicehooks.SubjectValidatorHookConfig{
-		Customer: customerService,
-		Logger:   slog.Default(),
-	})
-	require.NoError(t, err)
-	subjectService.RegisterHooks(customerSubjectValidatorHook)
 
 	entitlementValidatorHook, err := customerservicehooks.NewEntitlementValidatorHook(customerservicehooks.EntitlementValidatorHookConfig{
 		EntitlementService: entitlementRegistry.Entitlement,
@@ -176,7 +164,11 @@ func NewService(t *testing.T, dbDeps *DBDeps) SubscriptionDependencies {
 
 	planHelper := NewPlanHelper(planService)
 
-	svc := service.New(service.ServiceConfig{
+	ffService := ffx.NewTestContextService(ffx.AccessConfig{
+		subscription.MultiSubscriptionEnabledFF: false,
+	})
+
+	svc, err := service.New(service.ServiceConfig{
 		SubscriptionRepo:      subRepo,
 		SubscriptionPhaseRepo: subPhaseRepo,
 		SubscriptionItemRepo:  subItemRepo,
@@ -186,7 +178,9 @@ func NewService(t *testing.T, dbDeps *DBDeps) SubscriptionDependencies {
 		TransactionManager:    subItemRepo,
 		Publisher:             publisher,
 		Lockr:                 lockr,
+		FeatureFlags:          ffService,
 	})
+	require.NoError(t, err)
 
 	addonRepo, err := addonrepo.New(addonrepo.Config{
 		Client: dbDeps.DBClient,
@@ -231,6 +225,10 @@ func NewService(t *testing.T, dbDeps *DBDeps) SubscriptionDependencies {
 	})
 	require.NoError(t, err)
 
+	annotationCleanupHook, err := annotationhook.NewAnnotationCleanupHook(svc, subRepo, logger)
+	require.NoError(t, err)
+	require.NoError(t, svc.RegisterHook(annotationCleanupHook))
+
 	workflowSvc := subscriptionworkflowservice.NewWorkflowService(subscriptionworkflowservice.WorkflowServiceConfig{
 		Service:            svc,
 		CustomerService:    customerService,
@@ -238,6 +236,7 @@ func NewService(t *testing.T, dbDeps *DBDeps) SubscriptionDependencies {
 		AddonService:       subAddSvc,
 		Logger:             logger.With("subsystem", "subscription.workflow.service"),
 		Lockr:              lockr,
+		FeatureFlags:       ffService,
 	})
 
 	return SubscriptionDependencies{

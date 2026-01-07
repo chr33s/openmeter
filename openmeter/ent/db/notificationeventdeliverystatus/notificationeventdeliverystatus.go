@@ -18,6 +18,8 @@ const (
 	FieldID = "id"
 	// FieldNamespace holds the string denoting the namespace field in the database.
 	FieldNamespace = "namespace"
+	// FieldAnnotations holds the string denoting the annotations field in the database.
+	FieldAnnotations = "annotations"
 	// FieldCreatedAt holds the string denoting the created_at field in the database.
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
@@ -30,6 +32,10 @@ const (
 	FieldState = "state"
 	// FieldReason holds the string denoting the reason field in the database.
 	FieldReason = "reason"
+	// FieldNextAttemptAt holds the string denoting the next_attempt_at field in the database.
+	FieldNextAttemptAt = "next_attempt_at"
+	// FieldAttempts holds the string denoting the attempts field in the database.
+	FieldAttempts = "attempts"
 	// EdgeEvents holds the string denoting the events edge name in mutations.
 	EdgeEvents = "events"
 	// Table holds the table name of the notificationeventdeliverystatus in the database.
@@ -45,12 +51,15 @@ const (
 var Columns = []string{
 	FieldID,
 	FieldNamespace,
+	FieldAnnotations,
 	FieldCreatedAt,
 	FieldUpdatedAt,
 	FieldEventID,
 	FieldChannelID,
 	FieldState,
 	FieldReason,
+	FieldNextAttemptAt,
+	FieldAttempts,
 }
 
 var (
@@ -90,8 +99,8 @@ const DefaultState notification.EventDeliveryStatusState = "PENDING"
 
 // StateValidator is a validator for the "state" field enum values. It is called by the builders before save.
 func StateValidator(s notification.EventDeliveryStatusState) error {
-	switch s {
-	case "SUCCESS", "FAILED", "SENDING", "PENDING":
+	switch s.String() {
+	case "SUCCESS", "FAILED", "SENDING", "PENDING", "RESENDING":
 		return nil
 	default:
 		return fmt.Errorf("notificationeventdeliverystatus: invalid enum value for state field: %q", s)
@@ -139,6 +148,11 @@ func ByState(opts ...sql.OrderTermOption) OrderOption {
 // ByReason orders the results by the reason field.
 func ByReason(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldReason, opts...).ToFunc()
+}
+
+// ByNextAttemptAt orders the results by the next_attempt_at field.
+func ByNextAttemptAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldNextAttemptAt, opts...).ToFunc()
 }
 
 // ByEventsCount orders the results by events count.

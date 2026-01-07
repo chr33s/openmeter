@@ -46,11 +46,12 @@ type Connector interface {
 }
 
 type MeteredEntitlementValue struct {
-	isSoftLimit   bool      `json:"-"`
-	Balance       float64   `json:"balance"`
-	UsageInPeriod float64   `json:"usageInPeriod"`
-	Overage       float64   `json:"overage"`
-	StartOfPeriod time.Time `json:"startOfPeriod"`
+	isSoftLimit               bool      `json:"-"`
+	Balance                   float64   `json:"balance"`
+	UsageInPeriod             float64   `json:"usageInPeriod"`
+	Overage                   float64   `json:"overage"`
+	TotalAvailableGrantAmount float64   `json:"totalAvailableGrantAmount"`
+	StartOfPeriod             time.Time `json:"startOfPeriod"`
 }
 
 var _ entitlement.EntitlementValue = &MeteredEntitlementValue{}
@@ -128,11 +129,12 @@ func (e *connector) GetValue(ctx context.Context, entitlement *entitlement.Entit
 	}
 
 	return &MeteredEntitlementValue{
-		isSoftLimit:   metered.IsSoftLimit,
-		Balance:       balance.Balance,
-		UsageInPeriod: balance.UsageInPeriod,
-		Overage:       balance.Overage,
-		StartOfPeriod: balance.StartOfPeriod,
+		isSoftLimit:               metered.IsSoftLimit,
+		Balance:                   balance.Balance,
+		UsageInPeriod:             balance.UsageInPeriod,
+		Overage:                   balance.Overage,
+		StartOfPeriod:             balance.StartOfPeriod,
+		TotalAvailableGrantAmount: balance.TotalAvailableGrantAmount,
 	}, nil
 }
 
@@ -236,15 +238,12 @@ func (c *connector) AfterCreate(ctx context.Context, end *entitlement.Entitlemen
 			Amount:      amountToIssue,
 			Priority:    defaultx.WithDefault(metered.IssueAfterReset.Priority, DefaultIssueAfterResetPriority),
 			EffectiveAt: effectiveAt,
-			Expiration: grant.ExpirationPeriod{
-				Count:    100, // This is a bit of an issue... It would make sense for recurring tags to not have an expiration
-				Duration: grant.ExpirationPeriodDurationYear,
-			},
+			Expiration:  nil, // We don't want to expire the grant
 			// These two in conjunction make the grant always have `amountToIssue` balance after a reset
 			ResetMaxRollover: amountToIssue,
 			ResetMinRollover: amountToIssue,
-			Metadata: map[string]string{
-				IssueAfterResetMetaTag: "true",
+			Annotations: models.Annotations{
+				IssueAfterResetMetaTag: true,
 			},
 		})
 		if err != nil {

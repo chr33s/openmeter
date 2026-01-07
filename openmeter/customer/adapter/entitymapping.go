@@ -5,34 +5,18 @@ import (
 	"slices"
 
 	"github.com/samber/lo"
+	"github.com/samber/mo"
 
 	"github.com/openmeterio/openmeter/openmeter/customer"
 	"github.com/openmeterio/openmeter/openmeter/ent/db"
 	"github.com/openmeterio/openmeter/pkg/models"
 )
 
-func CustomerFromDBEntity(e db.Customer) (*customer.Customer, error) {
+func CustomerFromDBEntity(e db.Customer, expands customer.Expands) (*customer.Customer, error) {
 	subjectKeys, err := subjectKeysFromDBEntity(e)
 	if err != nil {
 		return nil, err
 	}
-
-	subscriptions, err := e.Edges.SubscriptionOrErr()
-	if err != nil {
-		if db.IsNotLoaded(err) {
-			return nil, errors.New("subscriptions must be loaded for customer")
-		}
-
-		return nil, err
-	}
-
-	subscriptionIDs := lo.FilterMap(subscriptions, func(item *db.Subscription, _ int) (string, bool) {
-		if item == nil {
-			return "", false
-		}
-
-		return item.ID, true
-	})
 
 	var metadata *models.Metadata
 
@@ -56,15 +40,26 @@ func CustomerFromDBEntity(e db.Customer) (*customer.Customer, error) {
 			Name:        e.Name,
 			Description: e.Description,
 		}),
-		UsageAttribution: customer.CustomerUsageAttribution{
-			SubjectKeys: subjectKeys,
-		},
 		PrimaryEmail: e.PrimaryEmail,
 		Currency:     e.Currency,
 		Metadata:     metadata,
 		Annotation:   annotations,
+	}
 
-		ActiveSubscriptionIDs: subscriptionIDs,
+	// Only set UsageAttribution if there are subject keys
+	if len(subjectKeys) > 0 {
+		result.UsageAttribution = &customer.CustomerUsageAttribution{
+			SubjectKeys: subjectKeys,
+		}
+	}
+
+	if slices.Contains(expands, customer.ExpandSubscriptions) {
+		activeSubscriptionIDs, err := resolveActiveSubscriptionIDs(e)
+		if err != nil {
+			return nil, err
+		}
+
+		result.ActiveSubscriptionIDs = mo.Some(activeSubscriptionIDs)
 	}
 
 	if e.Key != "" {
@@ -84,6 +79,27 @@ func CustomerFromDBEntity(e db.Customer) (*customer.Customer, error) {
 	}
 
 	return result, nil
+}
+
+func resolveActiveSubscriptionIDs(e db.Customer) ([]string, error) {
+	subscriptions, err := e.Edges.SubscriptionOrErr()
+	if err != nil {
+		if db.IsNotLoaded(err) {
+			return nil, errors.New("subscriptions must be loaded for customer")
+		}
+
+		return nil, err
+	}
+
+	subscriptionIDs := lo.FilterMap(subscriptions, func(item *db.Subscription, _ int) (string, bool) {
+		if item == nil {
+			return "", false
+		}
+
+		return item.ID, true
+	})
+
+	return subscriptionIDs, nil
 }
 
 func subjectKeysFromDBEntity(customerEntity db.Customer) ([]string, error) {

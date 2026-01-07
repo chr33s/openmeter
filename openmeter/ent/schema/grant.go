@@ -20,13 +20,18 @@ func (Grant) Mixin() []ent.Mixin {
 	return []ent.Mixin{
 		entutils.IDMixin{},
 		entutils.NamespaceMixin{},
-		entutils.MetadataMixin{},
+		entutils.AnnotationsMixin{},
 		entutils.TimeMixin{},
 	}
 }
 
 func (Grant) Fields() []ent.Field {
 	return []ent.Field{
+		field.JSON("metadata", map[string]string{}).
+			Optional().
+			SchemaType(map[string]string{
+				dialect.Postgres: "jsonb",
+			}),
 		field.String("owner_id").Immutable().SchemaType(map[string]string{
 			dialect.Postgres: "char(26)",
 		}),
@@ -35,10 +40,10 @@ func (Grant) Fields() []ent.Field {
 		}),
 		field.Uint8("priority").Default(0).Immutable(),
 		field.Time("effective_at").Immutable(),
-		field.JSON("expiration", grant.ExpirationPeriod{}).Immutable().SchemaType(map[string]string{
+		field.JSON("expiration", &grant.ExpirationPeriod{}).Optional().Immutable().SchemaType(map[string]string{
 			dialect.Postgres: "jsonb",
 		}),
-		field.Time("expires_at").Immutable(),
+		field.Time("expires_at").Optional().Nillable().Immutable(),
 		field.Time("voided_at").Optional().Nillable(),
 		field.Float("reset_max_rollover").Immutable().SchemaType(map[string]string{
 			dialect.Postgres: "numeric",
