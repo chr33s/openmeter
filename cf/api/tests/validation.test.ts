@@ -30,16 +30,15 @@ describe("Validation: content type", () => {
 });
 
 describe("Validation: param schemas", () => {
-	test("GET /api/v1/meters/:id with bad id format returns 400 VALIDATION_ERROR", async () => {
+	test("GET /api/v1/meters/:idOrSlug with non-existent slug returns 404 METER_NOT_FOUND", async () => {
 		const res = await SELF.fetch(
-			"http://localhost/api/v1/meters/not-a-valid-id",
+			"http://localhost/api/v1/meters/non-existent-slug",
 		);
-		// First middleware on list meters returns 401; for param validation we exercise the :id route
-		// but it's also protected further down; we still expect validation to run before resource lookup for invalid format
-		// Depending on middleware order, result may be 400 or 401; accept either but assert shape when 400.
-		if (res.status === 400) {
+		// With meterIdOrSlug support, any string is a valid lookup (either ID or slug)
+		// If not found, we return 404; if auth required first, we get 401
+		if (res.status === 404) {
 			const json = await res.json();
-			expect(json?.error?.code).toBe("VALIDATION_ERROR");
+			expect(json?.error?.code).toBe("METER_NOT_FOUND");
 		} else {
 			expect([401, 403]).toContain(res.status);
 		}

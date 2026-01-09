@@ -57,6 +57,8 @@ app.get(
 		commonSchemas.paginationQuery.extend({
 			search: commonSchemas.filterQuery.shape.search,
 			aggregation: z.enum(MeterAggregation).optional(),
+			eventType: z.string().optional(),
+			includeDeleted: z.coerce.boolean().optional().default(false),
 		}),
 	),
 	async (c) => {
@@ -96,6 +98,11 @@ app.get(
 			const database = dbService.database;
 			const conditions = [eq(meters.namespace, namespace)];
 
+			// Filter out deleted meters unless includeDeleted is true
+			if (!query.includeDeleted) {
+				conditions.push(sql`${meters.deletedAt} IS NULL`);
+			}
+
 			if (query.search) {
 				conditions.push(
 					sql`(${meters.name} LIKE ${`%${query.search}%`} OR ${meters.key} LIKE ${`%${query.search}%`})`,
@@ -104,6 +111,10 @@ app.get(
 
 			if (query.aggregation) {
 				conditions.push(eq(meters.aggregation, query.aggregation));
+			}
+
+			if (query.eventType) {
+				conditions.push(eq(meters.eventType, query.eventType));
 			}
 
 			// Query with pagination
@@ -170,22 +181,19 @@ app.get(
 	},
 );
 
-// Get meter by ID
+// Get meter by ID or slug (key)
 app.get(
-	"/:id",
-	validate(
-		"param",
-		z.object({ id: commonSchemas.uuid.or(commonSchemas.ulid) }),
-	),
+	"/:idOrSlug",
+	validate("param", z.object({ idOrSlug: z.string().min(1) })),
 	async (c) => {
 		const logger = withRequestLogging(c.req);
 		const dbService = c.get("dbService");
 		const cacheService = c.get("cacheService");
 		const namespace = c.get("namespace");
-		const id = c.req.param("id");
+		const idOrSlug = c.req.param("idOrSlug");
 
 		try {
-			const cacheKey = CacheService.createKey("meter", namespace, id);
+			const cacheKey = CacheService.createKey("meter", namespace, idOrSlug);
 
 			// Try cache first
 			const cached = await cacheService.get<Meter>(cacheKey);
@@ -197,10 +205,16 @@ app.get(
 			logger.cacheOperation("miss", cacheKey);
 
 			const database = dbService.database;
+			// Support both ID and slug (key) lookup
 			const metersResult = await database
 				.select()
 				.from(meters)
-				.where(and(eq(meters.id, id), eq(meters.namespace, namespace)))
+				.where(
+					and(
+						eq(meters.namespace, namespace),
+						sql`(${meters.id} = ${idOrSlug} OR ${meters.key} = ${idOrSlug})`,
+					),
+				)
 				.limit(1);
 
 			if (metersResult.length === 0) {
@@ -236,7 +250,7 @@ app.get(
 			// Cache result
 			await cacheService.set(cacheKey, result, 300);
 
-			logger.info("Retrieved meter", { id, namespace });
+			logger.info("Retrieved meter", { idOrSlug, namespace });
 
 			return c.json(result);
 		} catch (error) {

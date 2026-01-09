@@ -44,6 +44,7 @@ app.get(
 		commonSchemas.paginationQuery.extend({
 			meterId: z.string().optional(),
 			subjectId: z.string().optional(),
+			customerId: z.string().optional(),
 			from: z.string().check(z.iso.datetime()).optional(),
 			to: z.string().check(z.iso.datetime()).optional(),
 		}),
@@ -86,6 +87,7 @@ app.get(
 				namespace,
 				meterId: query.meterId,
 				subjectId: query.subjectId,
+				customerId: query.customerId,
 				from: query.from ? new Date(query.from) : undefined,
 				to: query.to ? new Date(query.to) : undefined,
 				limit: paginationParams.limit,

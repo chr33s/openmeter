@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -10,7 +10,7 @@ import type {
 	PaginationResponse,
 } from "#api/types";
 import { CreateFeatureSchema, UpdateFeatureSchema } from "#api/types";
-import { features } from "#api/services/database";
+import { features, meters } from "#api/services/database";
 import { requireAuth, requireAdmin } from "#api/middleware/auth";
 import { validate, commonSchemas } from "#api/middleware/validation";
 import { perUserRateLimit } from "#api/middleware/rate-limit";
@@ -18,6 +18,7 @@ import { withRequestLogging } from "#api/utils/logger";
 import { pagination, addPaginationHeaders } from "#api/utils/pagination";
 import { CacheService } from "#api/services/cache";
 import { DatabaseService } from "#api/services/database";
+import { notFoundError, alreadyExistsError } from "#api/utils/errors";
 
 const app = new Hono<{
 	Bindings: Env;
@@ -37,6 +38,7 @@ app.get(
 		commonSchemas.paginationQuery.extend({
 			search: commonSchemas.filterQuery.shape.search,
 			meterId: z.string().optional(),
+			includeArchived: z.coerce.boolean().optional().default(false),
 		}),
 	),
 	async (c) => {
@@ -73,6 +75,11 @@ app.get(
 
 			const database = dbService.database;
 			const conditions = [eq(features.namespace, namespace)];
+
+			// Filter out archived (deleted) features unless includeArchived is true
+			if (!query.includeArchived) {
+				conditions.push(sql`${features.deletedAt} IS NULL`);
+			}
 
 			if (query.search) {
 				conditions.push(
@@ -221,6 +228,29 @@ app.post(
 		try {
 			const database = dbService.database;
 
+			// Validate that the meter exists and is not deleted if meterId is provided
+			if (data.meterId) {
+				const meterResult = await database
+					.select()
+					.from(meters)
+					.where(
+						and(
+							eq(meters.id, data.meterId),
+							eq(meters.namespace, namespace),
+							isNull(meters.deletedAt),
+						),
+					)
+					.limit(1);
+
+				if (meterResult.length === 0) {
+					return notFoundError(
+						c,
+						"meter",
+						"The specified meter does not exist or is archived",
+					);
+				}
+			}
+
 			// Check for existing key
 			const existing = await database
 				.select()
@@ -231,17 +261,7 @@ app.post(
 				.limit(1);
 
 			if (existing.length > 0) {
-				return c.json(
-					{
-						error: {
-							code: "FEATURE_ALREADY_EXISTS",
-							message: "A feature with this key already exists",
-						},
-						timestamp: new Date().toISOString(),
-						requestId: c.get("requestId"),
-					},
-					409,
-				);
+				return alreadyExistsError(c, "feature");
 			}
 
 			const [inserted] = await database

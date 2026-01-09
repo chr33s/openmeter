@@ -92,10 +92,22 @@ export interface Event {
 	id: string;
 	meterId: string;
 	subjectId: string;
+	customerId?: string;
 	timestamp: Date;
 	value: number;
 	properties?: Record<string, any>;
+	ingestedAt: Date;
+	storedAt: Date;
 }
+
+// Reserved event types that are not allowed for user events
+export const RESERVED_EVENT_TYPES = [
+	"openmeter.billing",
+	"openmeter.subscription",
+	"openmeter.entitlement",
+	"openmeter.notification",
+	"openmeter.system",
+] as const;
 
 // Feature types
 export interface Feature extends ManagedResource {
@@ -172,7 +184,15 @@ export type UpdateSubjectRequest = z.infer<typeof UpdateSubjectSchema>;
 // Event API types
 export const IngestEventSchema = z.object({
 	subject: z.string().min(1),
-	type: z.string().min(1),
+	type: z
+		.string()
+		.min(1)
+		.refine(
+			(type) =>
+				!RESERVED_EVENT_TYPES.some((reserved) => type.startsWith(reserved)),
+			{ message: "Event type uses a reserved prefix" },
+		),
+	customerId: z.string().optional(),
 	timestamp: z.string().check(z.iso.datetime()).optional(),
 	value: z.number().optional(),
 	properties: z.record(z.string(), z.any()).optional(),
