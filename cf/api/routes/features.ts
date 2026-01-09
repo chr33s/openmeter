@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { z } from "zod";
 
@@ -10,7 +10,7 @@ import type {
 	PaginationResponse,
 } from "#api/types";
 import { CreateFeatureSchema, UpdateFeatureSchema } from "#api/types";
-import { features } from "#api/services/database";
+import { features, meters } from "#api/services/database";
 import { requireAuth, requireAdmin } from "#api/middleware/auth";
 import { validate, commonSchemas } from "#api/middleware/validation";
 import { perUserRateLimit } from "#api/middleware/rate-limit";
@@ -37,6 +37,7 @@ app.get(
 		commonSchemas.paginationQuery.extend({
 			search: commonSchemas.filterQuery.shape.search,
 			meterId: z.string().optional(),
+			includeArchived: z.coerce.boolean().optional().default(false),
 		}),
 	),
 	async (c) => {
@@ -73,6 +74,11 @@ app.get(
 
 			const database = dbService.database;
 			const conditions = [eq(features.namespace, namespace)];
+
+			// Filter out archived (deleted) features unless includeArchived is true
+			if (!query.includeArchived) {
+				conditions.push(sql`${features.deletedAt} IS NULL`);
+			}
 
 			if (query.search) {
 				conditions.push(
@@ -220,6 +226,35 @@ app.post(
 
 		try {
 			const database = dbService.database;
+
+			// Validate that the meter exists and is not deleted if meterId is provided
+			if (data.meterId) {
+				const meterResult = await database
+					.select()
+					.from(meters)
+					.where(
+						and(
+							eq(meters.id, data.meterId),
+							eq(meters.namespace, namespace),
+							isNull(meters.deletedAt),
+						),
+					)
+					.limit(1);
+
+				if (meterResult.length === 0) {
+					return c.json(
+						{
+							error: {
+								code: "METER_NOT_FOUND",
+								message: "The specified meter does not exist or is archived",
+							},
+							timestamp: new Date().toISOString(),
+							requestId: c.get("requestId"),
+						},
+						400,
+					);
+				}
+			}
 
 			// Check for existing key
 			const existing = await database

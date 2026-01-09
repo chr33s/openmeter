@@ -14,7 +14,7 @@ export default defineWorkersConfig(async () => {
 			name: "worker",
 			poolOptions: {
 				workers: {
-					main: "./api/index.ts",
+					main: "./index.ts",
 					miniflare: {
 						bindings: {
 							API_KEY_SECRET: "test-secret",

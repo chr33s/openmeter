@@ -80,11 +80,18 @@ export const events = sqliteTable(
 			.$defaultFn(() => crypto.randomUUID()),
 		meterId: text("meter_id").notNull(),
 		subjectId: text("subject_id").notNull(),
+		customerId: text("customer_id"),
 		timestamp: integer("timestamp", { mode: "timestamp" }).notNull(),
 		value: real("value").notNull().default(0),
 		properties: text("properties", { mode: "json" }).$type<
 			Record<string, any>
 		>(),
+		ingestedAt: integer("ingested_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		storedAt: integer("stored_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
@@ -93,6 +100,7 @@ export const events = sqliteTable(
 		index("idx_events_meter_subject").on(table.meterId, table.subjectId),
 		index("idx_events_timestamp").on(table.timestamp),
 		index("idx_events_meter_timestamp").on(table.meterId, table.timestamp),
+		index("idx_events_customer").on(table.customerId),
 		foreignKey({
 			columns: [table.meterId],
 			foreignColumns: [meters.id],

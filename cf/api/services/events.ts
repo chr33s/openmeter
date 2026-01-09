@@ -40,15 +40,19 @@ export class EventsService {
 			const timestamp = eventData.timestamp
 				? new Date(eventData.timestamp)
 				: new Date();
+			const now = new Date();
 
 			const [insertedEvent] = await database
 				.insert(events)
 				.values({
 					meterId: meter.id,
 					subjectId: subject.id,
+					customerId: eventData.customerId,
 					timestamp,
 					value,
 					properties: eventData.properties,
+					ingestedAt: now,
+					storedAt: now,
 				})
 				.returning({ id: events.id });
 
@@ -105,13 +109,22 @@ export class EventsService {
 		namespace: string;
 		meterId?: string;
 		subjectId?: string;
+		customerId?: string;
 		from?: Date;
 		to?: Date;
 		limit?: number;
 		offset?: number;
 	}): Promise<{ events: Event[]; totalCount: number }> {
 		const database = this.db.database;
-		const { meterId, subjectId, from, to, limit = 100, offset = 0 } = params;
+		const {
+			meterId,
+			subjectId,
+			customerId,
+			from,
+			to,
+			limit = 100,
+			offset = 0,
+		} = params;
 
 		try {
 			// Build query conditions
@@ -123,6 +136,10 @@ export class EventsService {
 
 			if (subjectId) {
 				conditions.push(eq(events.subjectId, subjectId));
+			}
+
+			if (customerId) {
+				conditions.push(eq(events.customerId, customerId));
 			}
 
 			if (from) {
@@ -158,9 +175,12 @@ export class EventsService {
 					id: event.id,
 					meterId: event.meterId,
 					subjectId: event.subjectId,
+					customerId: event.customerId || undefined,
 					timestamp: event.timestamp,
 					value: event.value,
 					properties: event.properties || undefined,
+					ingestedAt: event.ingestedAt,
+					storedAt: event.storedAt,
 				})),
 				totalCount,
 			};
