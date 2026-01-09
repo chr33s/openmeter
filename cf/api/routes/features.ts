@@ -18,6 +18,7 @@ import { withRequestLogging } from "#api/utils/logger";
 import { pagination, addPaginationHeaders } from "#api/utils/pagination";
 import { CacheService } from "#api/services/cache";
 import { DatabaseService } from "#api/services/database";
+import { notFoundError, alreadyExistsError } from "#api/utils/errors";
 
 const app = new Hono<{
 	Bindings: Env;
@@ -242,16 +243,10 @@ app.post(
 					.limit(1);
 
 				if (meterResult.length === 0) {
-					return c.json(
-						{
-							error: {
-								code: "METER_NOT_FOUND",
-								message: "The specified meter does not exist or is archived",
-							},
-							timestamp: new Date().toISOString(),
-							requestId: c.get("requestId"),
-						},
-						400,
+					return notFoundError(
+						c,
+						"meter",
+						"The specified meter does not exist or is archived",
 					);
 				}
 			}
@@ -266,17 +261,7 @@ app.post(
 				.limit(1);
 
 			if (existing.length > 0) {
-				return c.json(
-					{
-						error: {
-							code: "FEATURE_ALREADY_EXISTS",
-							message: "A feature with this key already exists",
-						},
-						timestamp: new Date().toISOString(),
-						requestId: c.get("requestId"),
-					},
-					409,
-				);
+				return alreadyExistsError(c, "feature");
 			}
 
 			const [inserted] = await database
